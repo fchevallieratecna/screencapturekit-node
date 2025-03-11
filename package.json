@@ -2,11 +2,11 @@
   "name": "screencapturekit",
   "version": "0.1.0",
   "description": "A nodejs wrapper over a swift CLI program which is a wrapper over ScreenCaptureKit module with HDR and microphone support",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },

@@ -5,6 +5,7 @@ import * as macosVersion from "macos-version";
 import fileUrl from "file-url";
 // import { fixPathForAsarUnpack } from "electron-util";
 import { execa, type ExecaChildProcess } from "execa";
+import { fileURLToPath } from "url";
 
 /**
  * Generates a random identifier composed of alphanumeric characters.
@@ -12,8 +13,8 @@ import { execa, type ExecaChildProcess } from "execa";
  * @private
  */
 const getRandomId = () => Math.random().toString(36).slice(2, 15);
-// Workaround for https://github.com/electron/electron/issues/9459
-// const BIN = path.join(fixPathForAsarUnpack(__dirname), "aperture");
+// Chemin pour ESM uniquement
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BIN = path.join(__dirname, "../dist/screencapturekit");
 
 /**
