@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "screencapturekit-cli",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v13)], // Note: certaines fonctionnalités utilisées ne sont disponibles qu'à partir de macOS 15.0
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.2.2"),
     ],

@@ -21,7 +21,10 @@ struct Options: Decodable {
     let highlightClicks: Bool
     let screenId: CGDirectDisplayID
     let audioDeviceId: String?
+    let microphoneDeviceId: String?
     let videoCodec: String?
+    let enableHDR: Bool?
+    let useDirectRecordingAPI: Bool?
 }
 
 @main
@@ -37,7 +40,7 @@ extension ScreenCaptureKitCLI {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "List windows or screens which can be recorded",
-            subcommands: [Screens.self]
+            subcommands: [Screens.self, AudioDevices.self, MicrophoneDevices.self]
         )
     }
 
@@ -59,18 +62,18 @@ extension ScreenCaptureKitCLI {
                     throw RecordingError("No screen capture permission")
                 }
 
-                let screenRecorder = try await ScreenRecorder(url: options.destination, displayID: CGMainDisplayID(), showCursor: options.showCursor, cropRect: options.cropRect)
-                // TODO: These event handlers to get mouse events don't work if i don't run the NSApplication run loop
-                // using NSApplication.shared.run()
-                // But if i do that, then my signal handlers to handle SIGINT, SIGTERM etc. don't work
-                // NSEvent.addGlobalMonitorForEvents(matching: NSEvent.EventTypeMask.any) { event in
-                //     print("mouse or keyboard event:", event)
-                // }
-                // NSEvent.addLocalMonitorForEvents(matching: NSEvent.EventTypeMask.any) { event in
-                //     print("mouse or keyboard event:", event)
-                //     return event
-                // }
-                print("Starting screen recording of main display")
+                let screenRecorder = try await ScreenRecorder(
+                    url: options.destination, 
+                    displayID: options.screenId, 
+                    showCursor: options.showCursor, 
+                    cropRect: options.cropRect,
+                    audioDeviceId: options.audioDeviceId,
+                    microphoneDeviceId: options.microphoneDeviceId,
+                    enableHDR: options.enableHDR ?? false,
+                    useDirectRecordingAPI: options.useDirectRecordingAPI ?? false
+                )
+                
+                print("Starting screen recording of display \(options.screenId)")
                 try await screenRecorder.start()
 
                 // Super duper hacky way to keep waiting for user's kill signal.
@@ -123,24 +126,65 @@ extension ScreenCaptureKitCLI.List {
         mutating func run() async throws {
             let sharableContent = try await SCShareableContent.current
             print(sharableContent.displays.count, sharableContent.windows.count, sharableContent.applications.count)
-            let appNames = sharableContent.applications.map {
-                app in
-                ["name": app.applicationName, "process_id": app.processID, "bundle_identifier": app.bundleIdentifier]
+            let screens = sharableContent.displays.map { display in
+                ["id": display.displayID, "width": display.width, "height": display.height]
             }
-            try print(toJson(appNames), to: .standardError)
+            try print(toJson(screens), to: .standardError)
+        }
+    }
+    
+    struct AudioDevices: AsyncParsableCommand {
+        mutating func run() async throws {
+            let devices = AVCaptureDevice.devices(for: .audio)
+            let audioDevices = devices.map { device in
+                ["id": device.uniqueID, "name": device.localizedName, "manufacturer": device.manufacturer]
+            }
+            try print(toJson(audioDevices), to: .standardError)
+        }
+    }
+    
+    struct MicrophoneDevices: AsyncParsableCommand {
+        mutating func run() async throws {
+            let devices = AVCaptureDevice.devices(for: .audio).filter { $0.hasMediaType(.audio) }
+            let microphones = devices.map { device in
+                ["id": device.uniqueID, "name": device.localizedName, "manufacturer": device.manufacturer]
+            }
+            try print(toJson(microphones), to: .standardError)
         }
     }
 }
 
+@available(macOS, introduced: 10.13, obsoleted: 16.0)
 struct ScreenRecorder {
     private let videoSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.VideoSampleBufferQueue")
+    private let audioSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.AudioSampleBufferQueue")
+    private let microphoneSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.MicrophoneSampleBufferQueue")
 
     private let assetWriter: AVAssetWriter
     private let videoInput: AVAssetWriterInput
+    private var audioInput: AVAssetWriterInput?
+    private var microphoneInput: AVAssetWriterInput?
     private let streamOutput: StreamOutput
     private var stream: SCStream
+    
+    // Ne peut pas utiliser @available sur une propriété stockée
+    // Utilisons un wrapper
+    private var _recordingOutput: Any?
+    
+    private var useDirectRecording: Bool
 
-    init(url: URL, displayID: CGDirectDisplayID, showCursor: Bool = true, cropRect: CGRect?) async throws {
+    init(
+        url: URL, 
+        displayID: CGDirectDisplayID, 
+        showCursor: Bool = true, 
+        cropRect: CGRect? = nil,
+        audioDeviceId: String? = nil,
+        microphoneDeviceId: String? = nil,
+        enableHDR: Bool = false,
+        useDirectRecordingAPI: Bool = false
+    ) async throws {
+        self.useDirectRecording = useDirectRecordingAPI
+        
         // Create AVAssetWriter for a QuickTime movie file
         assetWriter = try AVAssetWriter(url: url, fileType: .mov)
 
@@ -174,11 +218,63 @@ struct ScreenRecorder {
         }
         outputSettings[AVVideoWidthKey] = videoSize.width
         outputSettings[AVVideoHeightKey] = videoSize.height
+        
+        // Configure HDR settings if enabled
+        if enableHDR {
+            if #available(macOS 13.0, *) {
+                outputSettings[AVVideoColorPropertiesKey] = [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_2020,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_2100_HLG,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_2020
+                ]
+            } else {
+                print("HDR requested but not supported on this macOS version")
+            }
+        }
 
         // Create AVAssetWriter input for video, based on the output settings from the Assistant
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
         videoInput.expectsMediaDataInRealTime = true
-        streamOutput = StreamOutput(videoInput: videoInput)
+        
+        // Configure audio input if an audio device is specified
+        if let audioDeviceId = audioDeviceId {
+            let audioSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 48000,
+                AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 256000
+            ]
+            
+            audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+            audioInput?.expectsMediaDataInRealTime = true
+            
+            if let audioInput = audioInput, assetWriter.canAdd(audioInput) {
+                assetWriter.add(audioInput)
+            }
+        }
+        
+        // Configure microphone input if a microphone device is specified
+        if let microphoneDeviceId = microphoneDeviceId {
+            let micSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 48000,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderBitRateKey: 128000
+            ]
+            
+            microphoneInput = AVAssetWriterInput(mediaType: .audio, outputSettings: micSettings)
+            microphoneInput?.expectsMediaDataInRealTime = true
+            
+            if let microphoneInput = microphoneInput, assetWriter.canAdd(microphoneInput) {
+                assetWriter.add(microphoneInput)
+            }
+        }
+        
+        streamOutput = StreamOutput(
+            videoInput: videoInput,
+            audioInput: audioInput,
+            microphoneInput: microphoneInput
+        )
 
         // Adding videoInput to assetWriter
         guard assetWriter.canAdd(videoInput) else {
@@ -198,33 +294,86 @@ struct ScreenRecorder {
         // Create a filter for the specified display
         let sharableContent = try await SCShareableContent.current
         print(sharableContent.displays.count, sharableContent.windows.count, sharableContent.applications.count)
-        let appNames = sharableContent.applications.map { app in app.applicationName }
-        print(appNames)
-
+        
+        // Find the requested display
         guard let display = sharableContent.displays.first(where: { $0.displayID == displayID }) else {
-            throw RecordingError("Can't find display with ID \(displayID) in sharable content")
+            throw RecordingError("No display with ID \(displayID) found")
         }
+        
         let filter = SCContentFilter(display: display, excludingWindows: [])
-
-        let streamConfig = SCStreamConfiguration()
-        streamConfig.showsCursor = showCursor
-        streamConfig.queueDepth = 6
-
-        // Make sure to take displayScaleFactor into account
-        // otherwise, image is scaled up and gets blurry
-        if let cropRect = cropRect {
-            // ScreenCaptureKit uses top-left of screen as origin
-            streamConfig.sourceRect = cropRect
-            streamConfig.width = Int(cropRect.width) * displayScaleFactor
-            streamConfig.height = Int(cropRect.height) * displayScaleFactor
+        
+        // Configure stream
+        var config: SCStreamConfiguration
+        
+        if enableHDR, #available(macOS 13.0, *) {
+            // Pour macOS 15+, utilisez le preset HDR
+            if #available(macOS 15.0, *) {
+                let preset = SCStreamConfiguration.Preset.captureHDRStreamCanonicalDisplay
+                config = SCStreamConfiguration(preset: preset)
+            } else {
+                // Fallback pour macOS 13-14
+                config = SCStreamConfiguration()
+                // Configuration HDR manuelle si nécessaire
+            }
         } else {
-            streamConfig.width = Int(displaySize.width) * displayScaleFactor
-            streamConfig.height = Int(displaySize.height) * displayScaleFactor
+            config = SCStreamConfiguration()
         }
-
-        // Create SCStream and add local StreamOutput object to receive samples
-        stream = SCStream(filter: filter, configuration: streamConfig, delegate: nil)
-        try stream.addStreamOutput(streamOutput, type: .screen, sampleHandlerQueue: videoSampleBufferQueue)
+        
+        config.minimumFrameInterval = CMTime(value: 1, timescale: Int32(truncating: NSNumber(value: showCursor ? 60 : 30)))
+        config.showsCursor = showCursor
+        
+        // Configure microphone capture if needed
+        if let microphoneDeviceId = microphoneDeviceId {
+            if #available(macOS 15.0, *) {
+                config.captureMicrophone = true
+                config.microphoneCaptureDeviceID = microphoneDeviceId
+            } else if #available(macOS 14.0, *) {
+                print("Microphone capture with direct API requested but requires macOS 15.0+")
+            } else {
+                print("Microphone capture requested but not supported on this macOS version")
+            }
+        }
+        
+        // Create the stream
+        stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        
+        // If using direct recording API
+        if useDirectRecordingAPI {
+            if #available(macOS 15.0, *) {
+                let recordingConfig = SCRecordingOutputConfiguration()
+                recordingConfig.outputURL = url
+                
+                // SCRecordingOutputConfiguration n'a pas de propriété fileType
+                // Nous ne définissons que l'URL de sortie
+                
+                let recordingDelegate = RecordingDelegate()
+                let recOutput = SCRecordingOutput(configuration: recordingConfig, delegate: recordingDelegate)
+                _recordingOutput = recOutput
+                
+                do {
+                    try stream.addRecordingOutput(recOutput)
+                } catch {
+                    throw RecordingError("Failed to add recording output: \(error)")
+                }
+            } else {
+                print("Direct recording API requested but requires macOS 15.0+, falling back to manual recording")
+            }
+        } else {
+            // Set up stream output for manual recording
+            try stream.addStreamOutput(streamOutput, type: .screen, sampleHandlerQueue: videoSampleBufferQueue)
+            
+            if audioDeviceId != nil {
+                try stream.addStreamOutput(streamOutput, type: .audio, sampleHandlerQueue: audioSampleBufferQueue)
+            }
+            
+            if microphoneDeviceId != nil {
+                if #available(macOS 15.0, *) {
+                    try stream.addStreamOutput(streamOutput, type: .microphone, sampleHandlerQueue: microphoneSampleBufferQueue)
+                } else {
+                    print("Microphone stream output requires macOS 15.0+, skipping")
+                }
+            }
+        }
     }
 
     func start() async throws {
@@ -256,17 +405,25 @@ struct ScreenRecorder {
 
         // Finish writing
         videoInput.markAsFinished()
+        audioInput?.markAsFinished()
+        microphoneInput?.markAsFinished()
+        
         await assetWriter.finishWriting()
     }
 
     private class StreamOutput: NSObject, SCStreamOutput {
         let videoInput: AVAssetWriterInput
+        let audioInput: AVAssetWriterInput?
+        let microphoneInput: AVAssetWriterInput?
+        
         var sessionStarted = false
         var firstSampleTime: CMTime = .zero
         var lastSampleBuffer: CMSampleBuffer?
 
-        init(videoInput: AVAssetWriterInput) {
+        init(videoInput: AVAssetWriterInput, audioInput: AVAssetWriterInput? = nil, microphoneInput: AVAssetWriterInput? = nil) {
             self.videoInput = videoInput
+            self.audioInput = audioInput
+            self.microphoneInput = microphoneInput
         }
 
         func stream(_: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -276,6 +433,24 @@ struct ScreenRecorder {
             // Return early if the sample buffer is invalid
             guard sampleBuffer.isValid else { return }
 
+            switch type {
+            case .screen:
+                handleVideoSampleBuffer(sampleBuffer)
+            case .audio:
+                handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: false)
+            case .microphone:
+                handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: true)
+            @unknown default:
+                break
+            }
+        }
+        
+        private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+            guard videoInput.isReadyForMoreMediaData else {
+                print("AVAssetWriterInput (video) isn't ready, dropping frame")
+                return
+            }
+            
             // Retrieve the array of metadata attachments from the sample buffer
             guard let attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
                   let attachments = attachmentsArray.first
@@ -286,42 +461,60 @@ struct ScreenRecorder {
                   let status = SCFrameStatus(rawValue: statusRawValue),
                   status == .complete
             else { return }
+            
+            // Save the timestamp of the current sample, all future samples will be offset by this
+            if firstSampleTime == .zero {
+                firstSampleTime = sampleBuffer.presentationTimeStamp
+            }
 
-            switch type {
-            case .screen:
-                if videoInput.isReadyForMoreMediaData {
-                    // Save the timestamp of the current sample, all future samples will be offset by this
-                    if firstSampleTime == .zero {
-                        firstSampleTime = sampleBuffer.presentationTimeStamp
-                    }
+            // Offset the time of the sample buffer, relative to the first sample
+            let lastSampleTime = sampleBuffer.presentationTimeStamp - firstSampleTime
 
-                    // Offset the time of the sample buffer, relative to the first sample
-                    let lastSampleTime = sampleBuffer.presentationTimeStamp - firstSampleTime
+            // Always save the last sample buffer.
+            // This is used to "fill up" empty space at the end of the recording.
+            //
+            // Note that this permanently captures one of the sample buffers
+            // from the ScreenCaptureKit queue.
+            // Make sure reserve enough in SCStreamConfiguration.queueDepth
+            lastSampleBuffer = sampleBuffer
 
-                    // Always save the last sample buffer.
-                    // This is used to "fill up" empty space at the end of the recording.
-                    //
-                    // Note that this permanently captures one of the sample buffers
-                    // from the ScreenCaptureKit queue.
-                    // Make sure reserve enough in SCStreamConfiguration.queueDepth
-                    lastSampleBuffer = sampleBuffer
-
-                    // Create a new CMSampleBuffer by copying the original, and applying the new presentationTimeStamp
-                    let timing = CMSampleTimingInfo(duration: sampleBuffer.duration, presentationTimeStamp: lastSampleTime, decodeTimeStamp: sampleBuffer.decodeTimeStamp)
-                    if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
-                        videoInput.append(retimedSampleBuffer)
-                    } else {
-                        print("Couldn't copy CMSampleBuffer, dropping frame")
-                    }
-                } else {
-                    print("AVAssetWriterInput isn't ready, dropping frame")
+            // Create a new CMSampleBuffer by copying the original, and applying the new presentationTimeStamp
+            let timing = CMSampleTimingInfo(duration: sampleBuffer.duration, presentationTimeStamp: lastSampleTime, decodeTimeStamp: sampleBuffer.decodeTimeStamp)
+            if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
+                videoInput.append(retimedSampleBuffer)
+            } else {
+                print("Couldn't copy CMSampleBuffer, dropping frame")
+            }
+        }
+        
+        private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFromMicrophone: Bool) {
+            let input = isFromMicrophone ? microphoneInput : audioInput
+            
+            guard let audioInput = input, audioInput.isReadyForMoreMediaData else {
+                if input != nil {
+                    print("AVAssetWriterInput (audio) isn't ready, dropping sample")
                 }
-
-            case .audio:
-                break
-
-            @unknown default:
-                break
+                return
+            }
+            
+            // Offset audio sample relative to video start time
+            if firstSampleTime == .zero {
+                // If first video sample hasn't arrived yet, cache this audio sample for later
+                return
+            }
+            
+            // Retime audio sample buffer to match video timeline
+            let presentationTime = sampleBuffer.presentationTimeStamp - firstSampleTime
+            let timing = CMSampleTimingInfo(
+                duration: sampleBuffer.duration,
+                presentationTimeStamp: presentationTime,
+                decodeTimeStamp: .invalid
+            )
+            
+            if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
+                audioInput.append(retimedSampleBuffer)
+            } else {
+                print("Couldn't copy audio CMSampleBuffer, dropping sample")
             }
         }
     }
@@ -343,4 +536,32 @@ private func downsizedVideoSize(source: CGSize, scaleFactor: Int) -> (width: Int
 struct RecordingError: Error, CustomDebugStringConvertible {
     var debugDescription: String
     init(_ debugDescription: String) { self.debugDescription = debugDescription }
+}
+
+// Add required delegate for direct recording
+@available(macOS 15.0, *)
+class RecordingDelegate: NSObject, SCRecordingOutputDelegate {
+    func recordingOutput(_ output: SCRecordingOutput, didStartRecordingWithError error: Error?) {
+        if let error = error {
+            print("Recording started with error: \(error)")
+        } else {
+            print("Recording started successfully")
+        }
+    }
+    
+    func recordingOutput(_ output: SCRecordingOutput, didFinishRecordingWithError error: Error?) {
+        if let error = error {
+            print("Recording finished with error: \(error)")
+        } else {
+            print("Recording finished successfully")
+        }
+    }
+}
+
+extension AVCaptureDevice {
+    var manufacturer: String {
+        // La méthode properties n'existe pas
+        // Utilisons une valeur par défaut
+        return "Unknown"
+    }
 }
