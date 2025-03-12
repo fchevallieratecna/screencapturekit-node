@@ -1,10 +1,10 @@
 import os from "node:os";
-import { temporaryFile } from "tempy";
+import path from "node:path";
+import fs from "node:fs";
+import { v4 as uuidv4 } from "uuid";
 import * as macosVersion from "macos-version";
-import fileUrl from "file-url";
 import { execa, type ExecaChildProcess } from "execa";
 import { resolvePackagePath } from "./utils/packagePaths.js";
-
 const BIN = resolvePackagePath("./screencapturekit"); // Simplified path
 
 /**
@@ -251,9 +251,13 @@ class ScreenCaptureKit {
         return;
       }
 
-      this.videoPath = temporaryFile({ extension: "mp4" });
+      console.log('hey');
+
+      this.videoPath = createTempFile({ extension: "mp4" });
+      
+      console.log(this.videoPath);
       const recorderOptions: RecordingOptionsForScreenCaptureKit = {
-        destination: fileUrl(this.videoPath as string),
+        destination: fileUrlFromPath(this.videoPath as string),
         framesPerSecond: fps,
         showCursor,
         highlightClicks,
@@ -354,7 +358,22 @@ class ScreenCaptureKit {
       return null;
     }
 
+    // Ajoutons un délai pour s'assurer que le fichier est complètement écrit
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
     let currentFile = this.videoPath;
+
+    // Vérifier si le fichier existe et a une taille
+    try {
+      const stats = fs.statSync(currentFile);
+      if (stats.size === 0) {
+        console.error("Le fichier d'enregistrement est vide");
+        return null;
+      }
+    } catch (error) {
+      console.error("Erreur lors de la vérification du fichier d'enregistrement:", error);
+      return null;
+    }
 
     // Si nous avons plusieurs sources audio, nous devons les fusionner
     const hasMultipleAudioTracks = !!(
@@ -365,7 +384,7 @@ class ScreenCaptureKit {
     if (hasMultipleAudioTracks) {
       try {
         console.log("Fusion des pistes audio avec ffmpeg");
-        this.processedVideoPath = temporaryFile({ extension: "mp4" });
+        this.processedVideoPath = createTempFile({ extension: "mp4" });
         
         // Vérifier la structure du fichier avec ffprobe
         const { stdout: probeOutput } = await execa("ffprobe", [
@@ -419,7 +438,7 @@ class ScreenCaptureKit {
     if (this.currentOptions?.audioOnly) {
       try {
         console.log("Conversion en MP3");
-        const audioPath = temporaryFile({ extension: "mp3" });
+        const audioPath = createTempFile({ extension: "mp3" });
         
         await execa("ffmpeg", [
           "-i", currentFile,
@@ -522,3 +541,33 @@ export const supportsHDRCapture = supportsHDR;
  * @type {Map<string, string>}
  */
 export const videoCodecs = getCodecs();
+
+// Fonction de remplacement pour temporaryFile sans créer le fichier
+function createTempFile(options: { extension?: string } = {}): string {
+  const tempDir = os.tmpdir();
+  const randomId = uuidv4();
+  const extension = options.extension ? `.${options.extension}` : '';
+  const tempFilePath = path.join(tempDir, `${randomId}${extension}`);
+  
+  // Ne pas créer le fichier, juste retourner le chemin
+  return tempFilePath;
+}
+
+// Fonction personnalisée pour remplacer fileUrl
+function fileUrlFromPath(filePath: string): string {
+  // Encodage des caractères spéciaux
+  let pathName = filePath.replace(/\\/g, '/');
+  
+  // Assurez-vous que le chemin commence par un slash si ce n'est pas déjà le cas
+  if (pathName[0] !== '/') {
+    pathName = '/' + pathName;
+  }
+  
+  // Encodage des caractères spéciaux dans l'URL
+  pathName = encodeURI(pathName)
+    // Encodage supplémentaire pour les caractères qui ne sont pas gérés par encodeURI
+    .replace(/#/g, '%23')
+    .replace(/\?/g, '%3F');
+  
+  return `file://${pathName}`;
+}

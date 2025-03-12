@@ -1,6 +1,6 @@
 // Audio-only recording example with keyboard control
-import createScreenRecorder from 'screencapturekit';
-import { screens, audioDevices, microphoneDevices } from 'screencapturekit';
+import createScreenRecorder from '../dist/index.js';
+import { screens, audioDevices, microphoneDevices } from '../dist/index.js';
 import readline from 'readline';
 
 // Readline interface for interaction
