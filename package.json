@@ -19,7 +19,7 @@
   "scripts": {
     "test": "vitest",
     "build": "tsup && npm run build-swift",
-    "build-swift": "mkdir -p dist && swift build --configuration=release --arch arm64 --arch x86_64 && mv .build/apple/Products/Release/screencapturekit ./dist",
+    "build-swift": "mkdir -p dist 2>/dev/null || true && swift build --configuration=release --arch arm64 --arch x86_64 && mv .build/apple/Products/Release/screencapturekit ./dist",
     "prepublishOnly": "npm install && npm run build",
     "postinstall": "npm run build-swift",
     "dev": "tsup --watch",
