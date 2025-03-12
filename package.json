@@ -1,6 +1,6 @@
 {
   "name": "screencapturekit",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "A nodejs wrapper over a swift CLI program which is a wrapper over ScreenCaptureKit module with HDR and microphone support",
   "type": "module",
   "exports": {
@@ -33,7 +33,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mukeshsoni/screencapturekit-node.git"
+    "url": "git+https://github.com/fchevallieratecna/screencapturekit-node.git"
   },
   "keywords": [
     "screen-recording",
@@ -44,9 +44,9 @@
   "author": "Mukesh Soni",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mukeshsoni/screencapturekit-node/issues"
+    "url": "https://github.com/fchevallieratecna/screencapturekit-node/issues"
   },
-  "homepage": "https://github.com/mukeshsoni/screencapturekit-node#readme",
+  "homepage": "https://github.com/fchevallieratecna/screencapturekit-node#readme",
   "dependencies": {
     "delay": "^6.0.0",
     "execa": "^8.0.1",
