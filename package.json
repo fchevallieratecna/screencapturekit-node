@@ -20,7 +20,8 @@
     "test": "vitest",
     "build": "tsup && npm run build-swift",
     "build-swift": "swift build --configuration=release --arch arm64 --arch x86_64 && mv .build/apple/Products/Release/screencapturekit ./dist",
-    "prepublish": "mkdir -p dist && npm run build-swift",
+    "prepublish": "mkdir -p dist && npm run build",
+    "postinstall": "npm run build-swift",
     "dev": "tsup --watch",
     "format": "prettier --write .",
     "semantic-release": "semantic-release"
