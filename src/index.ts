@@ -98,7 +98,6 @@ type CropArea = {
  * @property {string} videoCodec - Video codec to use.
  * @property {boolean} [enableHDR] - Enable HDR recording (on macOS 13.0+).
  * @property {boolean} [recordToFile] - Use the direct recording API (on macOS 14.0+).
- * @property {boolean} [mixAudio] - Mix audio and microphone.
  */
 type RecordingOptions = {
   fps: number;
@@ -111,7 +110,6 @@ type RecordingOptions = {
   videoCodec: string;
   enableHDR?: boolean; // Added support for HDR
   recordToFile?: boolean; // Added support for direct file recording
-  mixAudio?: boolean; // Added support for mixing audio and microphone
 };
 
 /**
@@ -128,7 +126,6 @@ type RecordingOptions = {
  * @property {Array} [cropRect] - Coordinates of the cropping area.
  * @property {boolean} [enableHDR] - Enable HDR recording.
  * @property {boolean} [useDirectRecordingAPI] - Use the direct recording API.
- * @property {boolean} [mixAudio] - Mix audio and microphone.
  * @private
  */
 type RecordingOptionsForScreenCaptureKit = {
@@ -143,7 +140,6 @@ type RecordingOptionsForScreenCaptureKit = {
   cropRect?: [[x: number, y: number], [width: number, height: number]];
   enableHDR?: boolean; // Added support for HDR
   useDirectRecordingAPI?: boolean; // Use new recording API
-  mixAudio?: boolean; // Added support for mixing audio and microphone
 };
 
 /**
@@ -195,7 +191,6 @@ class ScreenCaptureKit {
    * @param {string} [options.videoCodec="h264"] - Video codec to use.
    * @param {boolean} [options.enableHDR=false] - Enable HDR recording.
    * @param {boolean} [options.recordToFile=false] - Use the direct recording API.
-   * @param {boolean} [options.mixAudio=false] - Mix audio and microphone.
    * @returns {Promise<void>} A promise that resolves when recording starts.
    * @throws {Error} If recording is already in progress or if the options are invalid.
    */
@@ -210,7 +205,6 @@ class ScreenCaptureKit {
     videoCodec = "h264",
     enableHDR = false,
     recordToFile = false,
-    mixAudio = false,
   }: Partial<RecordingOptions> = {}) {
     this.processId = getRandomId();
     // Stocke les options actuelles pour utilisation ultérieure
@@ -225,7 +219,6 @@ class ScreenCaptureKit {
       videoCodec,
       enableHDR,
       recordToFile,
-      mixAudio,
     };
     
     return new Promise((resolve, reject) => {
@@ -284,12 +277,6 @@ class ScreenCaptureKit {
           );
         } else {
           recorderOptions.microphoneDeviceId = microphoneDeviceId;
-          
-          // Si l'option de mixage audio est activée et que nous avons à la fois l'audio système et un microphone
-          if (mixAudio && audioDeviceId) {
-            recorderOptions.mixAudio = true;
-            console.log("Audio mixing enabled: system audio and microphone will be mixed into a single track");
-          }
         }
       }
 
@@ -342,8 +329,7 @@ class ScreenCaptureKit {
     // Si nous avons plusieurs sources audio, nous devons les fusionner
     const hasMultipleAudioTracks = !!(
       this.currentOptions?.audioDeviceId && 
-      this.currentOptions?.microphoneDeviceId && 
-      !this.currentOptions?.mixAudio
+      this.currentOptions?.microphoneDeviceId
     );
 
     if (hasMultipleAudioTracks && this.videoPath) {

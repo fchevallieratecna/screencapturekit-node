@@ -25,7 +25,6 @@ struct Options: Decodable {
     let videoCodec: String?
     let enableHDR: Bool?
     let useDirectRecordingAPI: Bool?
-    let mixAudio: Bool?
 }
 
 @main
@@ -71,8 +70,7 @@ extension ScreenCaptureKitCLI {
                     audioDeviceId: options.audioDeviceId,
                     microphoneDeviceId: options.microphoneDeviceId,
                     enableHDR: options.enableHDR ?? false,
-                    useDirectRecordingAPI: options.useDirectRecordingAPI ?? false,
-                    mixAudio: options.mixAudio ?? false
+                    useDirectRecordingAPI: options.useDirectRecordingAPI ?? false
                 )
                 
                 print("Starting screen recording of display \(options.screenId)")
@@ -171,21 +169,17 @@ struct ScreenRecorder {
     private let videoSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.VideoSampleBufferQueue")
     private let audioSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.AudioSampleBufferQueue")
     private let microphoneSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.MicrophoneSampleBufferQueue")
-    private let mixedAudioSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.MixedAudioSampleBufferQueue")
 
     private let assetWriter: AVAssetWriter
     private let videoInput: AVAssetWriterInput
     private var audioInput: AVAssetWriterInput?
     private var microphoneInput: AVAssetWriterInput?
-    private var mixedAudioInput: AVAssetWriterInput?
     private let streamOutput: StreamOutput
     private var stream: SCStream
     
     private var _recordingOutput: Any?
-    private var audioMixer: AudioMixer?
     
     private var useDirectRecording: Bool
-    private var shouldMixAudio: Bool
 
     init(
         url: URL, 
@@ -195,11 +189,9 @@ struct ScreenRecorder {
         audioDeviceId: String? = nil,
         microphoneDeviceId: String? = nil,
         enableHDR: Bool = false,
-        useDirectRecordingAPI: Bool = false,
-        mixAudio: Bool = false
+        useDirectRecordingAPI: Bool = false
     ) async throws {
         self.useDirectRecording = useDirectRecordingAPI
-        self.shouldMixAudio = mixAudio
         
         // Create AVAssetWriter for a QuickTime movie file
         assetWriter = try AVAssetWriter(url: url, fileType: .mov)
@@ -249,75 +241,44 @@ struct ScreenRecorder {
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
         videoInput.expectsMediaDataInRealTime = true
         
-        // Si le mixage audio est activé et que nous avons à la fois l'audio système et le microphone
-        let haveBothAudioSources = audioDeviceId != nil && microphoneDeviceId != nil
-        
-        if shouldMixAudio && haveBothAudioSources {
-            // Créer un seul input pour l'audio mixé
-            let mixedSettings: [String: Any] = [
+        // Configure audio input if an audio device is specified
+        if audioDeviceId != nil {
+            let audioSettings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48000,
-                AVNumberOfChannelsKey: 2,  // Stéréo pour le mixage
+                AVNumberOfChannelsKey: 2,
                 AVEncoderBitRateKey: 256000
             ]
             
-            mixedAudioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: mixedSettings)
-            mixedAudioInput?.expectsMediaDataInRealTime = true
+            audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+            audioInput?.expectsMediaDataInRealTime = true
             
-            if let mixedAudioInput = mixedAudioInput, assetWriter.canAdd(mixedAudioInput) {
-                assetWriter.add(mixedAudioInput)
-                
-                // Initialiser le mixer audio pour traiter les échantillons des deux sources
-                audioMixer = AudioMixer(mixedAudioInput: mixedAudioInput)
+            if let audioInput = audioInput, assetWriter.canAdd(audioInput) {
+                assetWriter.add(audioInput)
             }
+        }
+        
+        // Configure microphone input if a microphone device is specified
+        if microphoneDeviceId != nil {
+            let micSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 48000,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderBitRateKey: 128000
+            ]
             
-            // Nous n'ajoutons pas les inputs séparés
-            audioInput = nil
-            microphoneInput = nil
-        } else {
-            // Configuration audio standard (séparée) si le mixage n'est pas demandé
-            // Configure audio input if an audio device is specified
-            if audioDeviceId != nil {
-                let audioSettings: [String: Any] = [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 48000,
-                    AVNumberOfChannelsKey: 2,
-                    AVEncoderBitRateKey: 256000
-                ]
-                
-                audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-                audioInput?.expectsMediaDataInRealTime = true
-                
-                if let audioInput = audioInput, assetWriter.canAdd(audioInput) {
-                    assetWriter.add(audioInput)
-                }
-            }
+            microphoneInput = AVAssetWriterInput(mediaType: .audio, outputSettings: micSettings)
+            microphoneInput?.expectsMediaDataInRealTime = true
             
-            // Configure microphone input if a microphone device is specified
-            if microphoneDeviceId != nil {
-                let micSettings: [String: Any] = [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 48000,
-                    AVNumberOfChannelsKey: 1,
-                    AVEncoderBitRateKey: 128000
-                ]
-                
-                microphoneInput = AVAssetWriterInput(mediaType: .audio, outputSettings: micSettings)
-                microphoneInput?.expectsMediaDataInRealTime = true
-                
-                if let microphoneInput = microphoneInput, assetWriter.canAdd(microphoneInput) {
-                    assetWriter.add(microphoneInput)
-                }
+            if let microphoneInput = microphoneInput, assetWriter.canAdd(microphoneInput) {
+                assetWriter.add(microphoneInput)
             }
         }
         
         streamOutput = StreamOutput(
             videoInput: videoInput,
             audioInput: audioInput,
-            microphoneInput: microphoneInput,
-            mixedAudioInput: mixedAudioInput,
-            audioMixer: audioMixer,
-            shouldMixAudio: shouldMixAudio
+            microphoneInput: microphoneInput
         )
 
         // Adding videoInput to assetWriter
@@ -459,7 +420,6 @@ struct ScreenRecorder {
         videoInput.markAsFinished()
         audioInput?.markAsFinished()
         microphoneInput?.markAsFinished()
-        mixedAudioInput?.markAsFinished()
         
         await assetWriter.finishWriting()
     }
@@ -468,9 +428,6 @@ struct ScreenRecorder {
         let videoInput: AVAssetWriterInput
         let audioInput: AVAssetWriterInput?
         let microphoneInput: AVAssetWriterInput?
-        let mixedAudioInput: AVAssetWriterInput?
-        let audioMixer: AudioMixer?
-        let shouldMixAudio: Bool
         
         var sessionStarted = false
         var firstSampleTime: CMTime = .zero
@@ -478,16 +435,10 @@ struct ScreenRecorder {
 
         init(videoInput: AVAssetWriterInput, 
              audioInput: AVAssetWriterInput? = nil, 
-             microphoneInput: AVAssetWriterInput? = nil,
-             mixedAudioInput: AVAssetWriterInput? = nil,
-             audioMixer: AudioMixer? = nil,
-             shouldMixAudio: Bool = false) {
+             microphoneInput: AVAssetWriterInput? = nil) {
             self.videoInput = videoInput
             self.audioInput = audioInput
             self.microphoneInput = microphoneInput
-            self.mixedAudioInput = mixedAudioInput
-            self.audioMixer = audioMixer
-            self.shouldMixAudio = shouldMixAudio
         }
 
         func stream(_: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -501,17 +452,9 @@ struct ScreenRecorder {
             case .screen:
                 handleVideoSampleBuffer(sampleBuffer)
             case .audio:
-                if shouldMixAudio && audioMixer != nil {
-                    handleMixedAudioSampleBuffer(sampleBuffer, isFromMicrophone: false)
-                } else {
-                    handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: false)
-                }
+                handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: false)
             case .microphone:
-                if shouldMixAudio && audioMixer != nil {
-                    handleMixedAudioSampleBuffer(sampleBuffer, isFromMicrophone: true)
-                } else {
-                    handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: true)
-                }
+                handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: true)
             @unknown default:
                 break
             }
@@ -559,27 +502,6 @@ struct ScreenRecorder {
             }
         }
         
-        private func handleMixedAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFromMicrophone: Bool) {
-            // Si le premier échantillon vidéo n'est pas encore arrivé, 
-            // on ne peut pas synchroniser l'audio correctement
-            if firstSampleTime == .zero {
-                return
-            }
-            
-            // Recaler l'horodatage audio par rapport au début de la vidéo
-            let presentationTime = sampleBuffer.presentationTimeStamp - firstSampleTime
-            let timing = CMSampleTimingInfo(
-                duration: sampleBuffer.duration,
-                presentationTimeStamp: presentationTime,
-                decodeTimeStamp: .invalid
-            )
-            
-            if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
-                // Envoyer l'échantillon au mixeur audio
-                audioMixer?.processSampleBuffer(retimedSampleBuffer, isFromMicrophone: isFromMicrophone)
-            }
-        }
-        
         private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFromMicrophone: Bool) {
             let input = isFromMicrophone ? microphoneInput : audioInput
             
@@ -610,61 +532,6 @@ struct ScreenRecorder {
                 print("Couldn't copy audio CMSampleBuffer, dropping sample")
             }
         }
-    }
-}
-
-// Classe pour mixer les échantillons audio avec une implémentation simplifiée
-class AudioMixer {
-    private let mixedAudioInput: AVAssetWriterInput
-    
-    // Tampons pour stocker temporairement les échantillons
-    private var systemAudioSamples: [CMSampleBuffer] = []
-    private var microphoneSamples: [CMSampleBuffer] = []
-    
-    // Coefficients de volume
-    private let systemAudioVolume: Float = 0.8
-    private let microphoneVolume: Float = 1.0
-    
-    init(mixedAudioInput: AVAssetWriterInput) {
-        self.mixedAudioInput = mixedAudioInput
-    }
-    
-    func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFromMicrophone: Bool) {
-        // Stocker les échantillons dans les files d'attente appropriées
-        if isFromMicrophone {
-            microphoneSamples.append(sampleBuffer)
-        } else {
-            systemAudioSamples.append(sampleBuffer)
-        }
-        
-        // Essayer de traiter les échantillons disponibles
-        processAvailableSamples()
-    }
-    
-    private func processAvailableSamples() {
-        // Vérifier si nous avons des échantillons des deux sources à mixer
-        guard !systemAudioSamples.isEmpty && !microphoneSamples.isEmpty else {
-            return
-        }
-        
-        guard mixedAudioInput.isReadyForMoreMediaData else {
-            return
-        }
-        
-        // Prendre les premiers échantillons de chaque source
-        guard let systemBuffer = systemAudioSamples.first,
-              let microphoneBuffer = microphoneSamples.first else {
-            return
-        }
-        
-        // Pour une implémentation simplifiée, nous utilisons simplement l'échantillon système
-        // et ignorons l'échantillon du microphone pour éviter les problèmes de compilation
-        // Dans une implémentation plus sophistiquée, nous ferions un vrai mixage audio
-        mixedAudioInput.append(systemBuffer)
-        
-        // Retirer les échantillons traités des files d'attente
-        systemAudioSamples.removeFirst()
-        microphoneSamples.removeFirst()
     }
 }
 
