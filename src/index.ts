@@ -16,7 +16,8 @@ import fs from "node:fs/promises";
 const getRandomId = () => Math.random().toString(36).slice(2, 15);
 
 // Gestion du chemin compatible ESM et CJS
-const BIN = path.join(process.cwd(), "dist/screencapturekit");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BIN = path.join(__dirname, "../dist/screencapturekit");
 
 /**
  * Checks if the system supports HEVC (H.265) hardware encoding.
