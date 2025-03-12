@@ -98,6 +98,7 @@ type CropArea = {
  * @property {string} videoCodec - Video codec to use.
  * @property {boolean} [enableHDR] - Enable HDR recording (on macOS 13.0+).
  * @property {boolean} [recordToFile] - Use the direct recording API (on macOS 14.0+).
+ * @property {boolean} [audioOnly] - Record audio only, will convert to mp3 after recording.
  */
 type RecordingOptions = {
   fps: number;
@@ -110,6 +111,7 @@ type RecordingOptions = {
   videoCodec: string;
   enableHDR?: boolean; // Added support for HDR
   recordToFile?: boolean; // Added support for direct file recording
+  audioOnly?: boolean; // Added support for audio only recording
 };
 
 /**
@@ -205,6 +207,7 @@ class ScreenCaptureKit {
     videoCodec = "h264",
     enableHDR = false,
     recordToFile = false,
+    audioOnly = false,
   }: Partial<RecordingOptions> = {}) {
     this.processId = getRandomId();
     // Stocke les options actuelles pour utilisation ultérieure
@@ -219,6 +222,7 @@ class ScreenCaptureKit {
       videoCodec,
       enableHDR,
       recordToFile,
+      audioOnly,
     };
     
     return new Promise((resolve, reject) => {
@@ -326,24 +330,29 @@ class ScreenCaptureKit {
     console.log("Enregistrement arrêté");
     this.recorder = undefined;
 
+    if (!this.videoPath) {
+      return null;
+    }
+
+    let currentFile = this.videoPath;
+
     // Si nous avons plusieurs sources audio, nous devons les fusionner
     const hasMultipleAudioTracks = !!(
       this.currentOptions?.audioDeviceId && 
       this.currentOptions?.microphoneDeviceId
     );
 
-    if (hasMultipleAudioTracks && this.videoPath) {
+    if (hasMultipleAudioTracks) {
       try {
         console.log("Fusion des pistes audio avec ffmpeg");
         this.processedVideoPath = temporaryFile({ extension: "mp4" });
-        const audioPath = temporaryFile({ extension: "mp3" });
         
         // Vérifier la structure du fichier avec ffprobe
         const { stdout: probeOutput } = await execa("ffprobe", [
           "-v", "error",
           "-show_entries", "stream=index,codec_type",
           "-of", "json",
-          this.videoPath
+          currentFile
         ]);
         
         const probeResult = JSON.parse(probeOutput);
@@ -359,31 +368,41 @@ class ScreenCaptureKit {
           
         if (audioStreams.length < 2 || videoStream === undefined) {
           console.log("Pas assez de pistes audio pour fusionner ou pas de piste vidéo");
-          return this.videoPath;
+        } else {
+          const systemAudioIndex = audioStreams[0];
+          const microphoneIndex = audioStreams[1];
+          
+          const filterComplex = `[0:${systemAudioIndex}]volume=1[a1];[0:${microphoneIndex}]volume=3[a2];[a1][a2]amerge=inputs=2[aout]`;
+          
+          // Traitement vidéo
+          await execa("ffmpeg", [
+            "-i", currentFile,
+            "-filter_complex", filterComplex,
+            "-map", "[aout]",
+            "-map", `0:${videoStream}`,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "256k",
+            "-ac", "2",
+            "-y",
+            this.processedVideoPath
+          ]);
+          
+          currentFile = this.processedVideoPath;
         }
+      } catch (error) {
+        console.error("Erreur lors de la fusion des pistes audio:", error);
+      }
+    }
+
+    // Si audioOnly est activé, convertir en MP3
+    if (this.currentOptions?.audioOnly) {
+      try {
+        console.log("Conversion en MP3");
+        const audioPath = temporaryFile({ extension: "mp3" });
         
-        const systemAudioIndex = audioStreams[0];
-        const microphoneIndex = audioStreams[1];
-        
-        const filterComplex = `[0:${systemAudioIndex}]volume=1[a1];[0:${microphoneIndex}]volume=3[a2];[a1][a2]amerge=inputs=2[aout]`;
-        
-        // Traitement vidéo
         await execa("ffmpeg", [
-          "-i", this.videoPath,
-          "-filter_complex", filterComplex,
-          "-map", "[aout]",
-          "-map", `0:${videoStream}`,
-          "-c:v", "copy",
-          "-c:a", "aac",
-          "-b:a", "256k",
-          "-ac", "2",
-          "-y",
-          this.processedVideoPath
-        ]);
-        
-        // Extraire l'audio en MP3
-        await execa("ffmpeg", [
-          "-i", this.processedVideoPath,
+          "-i", currentFile,
           "-vn",
           "-c:a", "libmp3lame",
           "-b:a", "192k",
@@ -391,15 +410,14 @@ class ScreenCaptureKit {
           audioPath
         ]);
         
-        console.log(`Audio extrait en MP3: ${audioPath}`);
-        return { videoPath: this.processedVideoPath, audioPath };
+        return audioPath;
       } catch (error) {
-        console.error("Erreur lors du traitement:", error);
-        return this.videoPath;
+        console.error("Erreur lors de la conversion en MP3:", error);
+        return currentFile;
       }
     }
 
-    return this.videoPath;
+    return currentFile;
   }
 }
 
