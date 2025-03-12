@@ -1,4 +1,4 @@
-// Simple screen recording example
+// Simple screen capture example
 import createScreenRecorder from 'screencapturekit';
 import { screens } from 'screencapturekit';
 import { fileURLToPath } from 'url';
@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function main() {
   try {
-    console.log('=== SIMPLE SCREEN RECORDING EXAMPLE ===');
+    console.log('=== SIMPLE SCREEN CAPTURE ===');
     
     // Get available screens
     const availableScreens = await screens();
@@ -20,7 +20,7 @@ async function main() {
     const screen = availableScreens[0];
     console.log(`Selected screen: ${screen.width}x${screen.height}`);
     
-    // Create the recorder
+    // Create recorder
     const recorder = createScreenRecorder();
     
     // Capture options
@@ -36,7 +36,6 @@ async function main() {
     await recorder.startRecording(options);
     
     // Record for 5 seconds
-    console.log('Recording in progress (5 seconds)...');
     await new Promise(resolve => setTimeout(resolve, 5000));
     
     // Stop recording

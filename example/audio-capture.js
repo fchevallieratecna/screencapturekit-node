@@ -147,39 +147,26 @@ async function main() {
     // Créer un enregistreur
     const recorder = createScreenRecorder();
     
-    // Préparer les options - nous devons toujours capturer un écran minuscule car l'API demande une capture vidéo
-    // mais nous allons nous concentrer sur l'audio
+    // Préparer les options
     const options = {
-      // Capture vidéo minimaliste (1x1 pixel) car l'API l'exige
-      fps: 1,
-      showCursor: false,
-      highlightClicks: false,
       // Écran requis même pour l'audio uniquement
       screenId: selectedScreen.id,
       // Audio
-      captureSystemAudio,
-      captureMicrophone,
-      // Taille minimale pour la vidéo
+      audioDeviceId: selectedAudioDevice?.id,
+      microphoneDeviceId: selectedMic?.id,
+      // Option pour convertir automatiquement en MP3
+      audioOnly: true,
+      // Paramètres minimaux car on ne garde que l'audio
+      fps: 1,
+      showCursor: false,
+      highlightClicks: false,
       cropArea: {
         x: 0,
         y: 0,
         width: 1,
         height: 1
-      },
-      // Chemin de sortie adapté pour un fichier audio
-      outputPath: generateAudioFileName()
+      }
     };
-
-    // logs all options in json format
-    console.log(JSON.stringify(options, null, 2));
-    
-    if (selectedAudioDevice && captureSystemAudio) {
-      options.audioDeviceId = selectedAudioDevice.id;
-    }
-    
-    if (selectedMic && captureMicrophone) {
-      options.microphoneDeviceId = selectedMic.id;
-    }
     
     console.log('\nOptions d\'enregistrement:');
     console.log(JSON.stringify(options, null, 2));
@@ -212,14 +199,12 @@ async function main() {
     
     // Arrêter l'enregistrement
     console.log('Arrêt de l\'enregistrement...');
-    const outputPath = await recorder.stopRecording();
+    const audioPath = await recorder.stopRecording();
     
-    console.log(`\n✅ Audio enregistré à: ${outputPath}`);
+    console.log(`\n✅ Audio enregistré à: ${audioPath}`);
     console.log('   L\'enregistrement contient:');
-    console.log(`   - Audio système: ${options.captureSystemAudio ? '✅' : '❌'}`);
-    console.log(`   - Audio microphone: ${options.captureMicrophone ? '✅' : '❌'}`);
-    console.log('\nNote: Le fichier contient une vidéo minimale (1x1 pixel), car l\'API exige une capture vidéo.');
-    console.log('      Vous pouvez extraire l\'audio avec un outil comme ffmpeg si besoin.');
+    console.log(`   - Audio système: ${captureSystemAudio ? '✅' : '❌'}`);
+    console.log(`   - Audio microphone: ${captureMicrophone ? '✅' : '❌'}`);
     
     rl.close();
   } catch (error) {

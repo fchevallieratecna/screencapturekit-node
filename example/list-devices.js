@@ -1,69 +1,67 @@
-// Exemple de listage des écrans et des périphériques audio
+// Example of listing screens and audio devices
 import { screens, audioDevices, microphoneDevices, supportsHDRCapture, videoCodecs } from 'screencapturekit';
 
 async function main() {
   try {
-    console.log('----------------------------------------------------');
-    console.log('INFORMATIONS SUR LES PÉRIPHÉRIQUES DISPONIBLES');
-    console.log('----------------------------------------------------');
+    console.log('=== AVAILABLE DEVICES INFORMATION ===');
     
-    // Vérifier le support HDR
-    console.log(`\n🎨 Support HDR: ${supportsHDRCapture ? '✅ Supporté' : '❌ Non supporté'}`);
+    // Check HDR support
+    console.log(`\n🎨 HDR Support: ${supportsHDRCapture ? '✅ Supported' : '❌ Not supported'}`);
     
-    // Lister les codecs vidéo disponibles
-    console.log('\n📹 CODECS VIDÉO DISPONIBLES:');
-    console.log('----------------------------------------------------');
+    // List available video codecs
+    console.log('\n📹 Available Video Codecs:');
+    console.log('--------------------');
     if (videoCodecs && videoCodecs.size > 0) {
       for (const [key, value] of videoCodecs.entries()) {
-        console.log(`   - ${key}: ${value}`);
+        console.log(`[${key}] ${value}`);
       }
     } else {
-      console.log('   Aucun codec vidéo disponible');
+      console.log('No video codecs available');
     }
     
-    // Lister les écrans disponibles
-    console.log('\n🖥️  ÉCRANS DISPONIBLES:');
-    console.log('----------------------------------------------------');
+    // List available screens
+    console.log('\n🖥️  Available Screens:');
+    console.log('--------------------');
     const availableScreens = await screens();
     if (availableScreens && availableScreens.length > 0) {
       availableScreens.forEach((screen, index) => {
-        console.log(`   Screen ${index}: ID=${screen.id}, ${screen.width}x${screen.height}`);
+        console.log(`[${index}] ${screen.width}x${screen.height} (${screen.name || 'Unnamed'})`);
       });
     } else {
-      console.log('   Aucun écran disponible');
+      console.log('No screens available');
     }
     
-    // Lister les périphériques audio système
-    console.log('\n🔊 PÉRIPHÉRIQUES AUDIO SYSTÈME:');
-    console.log('----------------------------------------------------');
+    // List system audio devices
+    console.log('\n🔊 System Audio Devices:');
+    console.log('--------------------');
     const systemAudio = await audioDevices();
     if (systemAudio && systemAudio.length > 0) {
       systemAudio.forEach((device, index) => {
-        console.log(`   Device ${index}: ID=${device.id}, Name="${device.name}", Manufacturer="${device.manufacturer}"`);
+        console.log(`[${index}] ${device.name} (${device.manufacturer || 'Unknown manufacturer'})`);
       });
     } else {
-      console.log('   Aucun périphérique audio système disponible');
+      console.log('No system audio devices available');
     }
     
-    // Lister les périphériques microphone (macOS 14+)
-    console.log('\n🎤 PÉRIPHÉRIQUES MICROPHONE (macOS 14+):');
-    console.log('----------------------------------------------------');
+    // List microphone devices (macOS 14+)
+    console.log('\n🎤 Microphone Devices (macOS 14+):');
+    console.log('--------------------');
     try {
       const mics = await microphoneDevices();
       if (mics && mics.length > 0) {
         mics.forEach((mic, index) => {
-          console.log(`   Mic ${index}: ID="${mic.id}", Name="${mic.name}", Manufacturer="${mic.manufacturer}"`);
+          console.log(`[${index}] ${mic.name} (${mic.manufacturer || 'Unknown manufacturer'})`);
         });
       } else {
-        console.log('   Aucun microphone disponible');
+        console.log('No microphones available');
       }
     } catch (error) {
-      console.log(`   ❌ Non disponible: ${error.message}`);
+      console.log(`❌ Not available: ${error.message}`);
     }
     
-    console.log('\n✅ Fin de l\'énumération des périphériques');
+    console.log('\n✅ Device enumeration complete');
   } catch (error) {
-    console.error('❌ Erreur lors de l\'énumération des périphériques:', error);
+    console.error('❌ Error:', error);
   }
 }
 

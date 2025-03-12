@@ -1,15 +1,16 @@
 {
   "name": "screencapturekit-example",
   "version": "1.0.0",
-  "description": "Exemple d'utilisation de screencapturekit-node",
+  "description": "Example usage of screencapturekit-node",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "start:esm": "node esm-example.js",
+    "multi-screen": "node multi-screen.js",
+    "screen-with-audio": "node screen-with-audio.js",
+    "audio-only": "node audio-only.js",
     "list-devices": "node list-devices.js",
-    "advanced": "node advanced.js",
-    "audio-capture": "node audio-capture.js"
+    "advanced": "node advanced.js"
   },
   "author": "",
   "license": "MIT",

@@ -1,72 +1,86 @@
-# Exemples d'utilisation de ScreenCaptureKit pour Node.js
+# ScreenCaptureKit Examples for Node.js
 
-Ce dossier contient des exemples d'utilisation de la bibliothèque `screencapturekit` pour Node.js, qui permet d'enregistrer l'écran sur macOS avec les APIs natives d'Apple.
+This directory contains examples demonstrating the usage of the `screencapturekit` Node.js library, which enables screen and audio recording on macOS using Apple's native APIs.
 
-## Prérequis
+## Prerequisites
 
-- macOS 10.13 (High Sierra) ou version ultérieure
-- Node.js 14 ou version ultérieure
-- La bibliothèque `screencapturekit` installée (sera utilisée depuis le dossier parent)
+- macOS 10.13 (High Sierra) or later
+- Node.js 14 or later
+- The `screencapturekit` library installed (will be used from the parent directory)
 
 ## Installation
 
-Pour installer les dépendances des exemples:
+To install example dependencies:
 
 ```bash
 cd example
 npm install
 ```
 
-## Exemples inclus
+## Included Examples
 
-### 1. Exemple simple d'enregistrement d'écran
+### 1. Basic Screen Recording
 
-Un exemple basique qui montre comment démarrer et arrêter un enregistrement d'écran.
+A simple example demonstrating how to start and stop screen recording.
 
 ```bash
 npm start
 ```
 
-### 2. Exemple avec modules ES
+### 2. Screen Recording with System Audio
 
-Un exemple utilisant les imports ES avec quelques options personnalisées.
-
-```bash
-npm run start:esm
-```
-
-### 3. Lister les périphériques disponibles
-
-Un utilitaire pour lister tous les écrans, périphériques audio et microphones disponibles.
+An example combining screen capture with system audio.
 
 ```bash
-npm run list-devices
+npm run screen-with-audio
 ```
 
-### 4. Exemple avancé
+### 3. Audio-Only Recording
 
-Un exemple plus complexe qui montre comment utiliser différentes options comme:
-- Sélection d'un écran spécifique
-- Capture d'une région spécifique de l'écran
-- Activation du HDR (si disponible)
-- Configuration personnalisée (FPS, curseur, mise en évidence des clics)
+An example of audio recording (system and/or microphone) controlled by keystrokes.
+
+```bash
+npm run audio-only
+```
+
+### 4. Advanced Example
+
+A comprehensive example showcasing various features including:
+- Specific display selection
+- Screen region capture
+- HDR support (if available)
+- Custom configuration (FPS, cursor, click highlighting)
 
 ```bash
 npm run advanced
 ```
 
-## Fonctionnalités démontrées
+### 5. List Available Devices
 
-- Capture d'écran basique
-- Sélection d'écran spécifique
-- Capture d'une région spécifique
-- Options d'affichage du curseur et de mise en évidence des clics
-- Support HDR (sur macOS 13+)
-- Différents codecs vidéo
-- Énumération des périphériques audio et des écrans
+A utility to list all available displays, audio devices, and microphones.
 
-## Remarques
+```bash
+npm run list-devices
+```
 
-- Les fichiers d'enregistrement sont sauvegardés dans un dossier temporaire
-- Certaines fonctionnalités comme la capture de microphone ne sont disponibles que sur macOS 14 (Sonoma) ou version ultérieure
-- Le support HDR n'est disponible que sur macOS 13 (Ventura) ou version ultérieure 
+## Demonstrated Features
+
+- Basic screen capture
+- Specific window capture
+- Multi-display capture
+- System audio capture
+- Microphone capture (macOS 14+)
+- Audio-only recording
+- Specific display selection
+- Region capture
+- Cursor display and click highlighting options
+- HDR support (on macOS 13+)
+- Various video codecs
+- Device enumeration
+
+## Notes
+
+- Recording files are saved in a temporary directory
+- Microphone capture requires macOS 14 (Sonoma) or later
+- HDR support requires macOS 13 (Ventura) or later
+- System audio capture requires user authorization 
