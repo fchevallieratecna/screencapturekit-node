@@ -476,7 +476,6 @@ function getCodecs() {
  */
 export const screens = async (): Promise<Screen[] | string> => {
   const { stderr } = await execa(BIN, ["list", "screens"]);
-console.log("stderr", stderr);
   try {
     return JSON.parse(stderr);
   } catch {
@@ -491,7 +490,6 @@ console.log("stderr", stderr);
  */
 export const audioDevices = async (): Promise<AudioDevice[] | string> => {
   const { stderr } = await execa(BIN, ["list", "audio-devices"]);
-  console.log("stderr", stderr);
   try {
     return JSON.parse(stderr);
   } catch {
@@ -506,7 +504,6 @@ export const audioDevices = async (): Promise<AudioDevice[] | string> => {
  */
 export const microphoneDevices = async (): Promise<MicrophoneDevice[] | string> => {
   const { stderr } = await execa(BIN, ["list", "microphone-devices"]);
-  console.log("stderr", stderr);
   try {
     return JSON.parse(stderr);
   } catch {

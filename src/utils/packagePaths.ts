@@ -10,6 +10,9 @@ declare global {
 }
 
 export const getPackageRoot = () => {
+  if (process.env.NODE_ENV === "test") {
+    return path.join(__dirname, "..", "..", "dist");
+  }
   try {
     // Résolution via le point d'entrée du package
     const app = require("electron").app;
