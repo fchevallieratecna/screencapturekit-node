@@ -172,6 +172,7 @@ if (supportsMicrophoneCapture) {
 | videoCodec | string | 'h264' | Video codec ('h264', 'hevc', 'proRes422', 'proRes4444') |
 | enableHDR | boolean | false | Enable HDR recording (macOS 13+) |
 | recordToFile | boolean | false | Use direct recording API (macOS 15+) |
+| audioOnly | boolean | false | Record audio only, will convert to mp3 after recording |
 
 ## Post-processing
 
