@@ -135,7 +135,12 @@ extension ScreenCaptureKitCLI.List {
     
     struct AudioDevices: AsyncParsableCommand {
         mutating func run() async throws {
-            let devices = AVCaptureDevice.devices(for: .audio)
+            let discoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: [.builtInMicrophone, .externalUnknown],
+                mediaType: .audio,
+                position: .unspecified
+            )
+            let devices = discoverySession.devices
             let audioDevices = devices.map { device in
                 ["id": device.uniqueID, "name": device.localizedName, "manufacturer": device.manufacturer]
             }
@@ -145,7 +150,12 @@ extension ScreenCaptureKitCLI.List {
     
     struct MicrophoneDevices: AsyncParsableCommand {
         mutating func run() async throws {
-            let devices = AVCaptureDevice.devices(for: .audio).filter { $0.hasMediaType(.audio) }
+            let discoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: [.builtInMicrophone, .externalUnknown],
+                mediaType: .audio,
+                position: .unspecified
+            )
+            let devices = discoverySession.devices.filter { $0.hasMediaType(.audio) }
             let microphones = devices.map { device in
                 ["id": device.uniqueID, "name": device.localizedName, "manufacturer": device.manufacturer]
             }
@@ -154,7 +164,7 @@ extension ScreenCaptureKitCLI.List {
     }
 }
 
-@available(macOS, introduced: 10.13, obsoleted: 16.0)
+@available(macOS, introduced: 10.13)
 struct ScreenRecorder {
     private let videoSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.VideoSampleBufferQueue")
     private let audioSampleBufferQueue = DispatchQueue(label: "ScreenRecorder.AudioSampleBufferQueue")
@@ -167,8 +177,6 @@ struct ScreenRecorder {
     private let streamOutput: StreamOutput
     private var stream: SCStream
     
-    // Ne peut pas utiliser @available sur une propriété stockée
-    // Utilisons un wrapper
     private var _recordingOutput: Any?
     
     private var useDirectRecording: Bool
@@ -191,10 +199,9 @@ struct ScreenRecorder {
         // MARK: AVAssetWriter setup
 
         // Get size and pixel scale factor for display
-        // Used to compute the highest possible qualitiy
         let displaySize = CGDisplayBounds(displayID).size
 
-        // The number of physical pixels that represent a logic point on screen, currently 2 for MacBook Pro retina displays
+        // The number of physical pixels that represent a logic point on screen
         let displayScaleFactor: Int
         if let mode = CGDisplayCopyDisplayMode(displayID) {
             displayScaleFactor = mode.pixelWidth / mode.width
@@ -203,11 +210,9 @@ struct ScreenRecorder {
         }
 
         // AVAssetWriterInput supports maximum resolution of 4096x2304 for H.264
-        // Downsize to fit a larger display back into in 4K
         let videoSize = downsizedVideoSize(source: cropRect?.size ?? displaySize, scaleFactor: displayScaleFactor)
 
-        // This preset is the maximum H.264 preset, at the time of writing this code
-        // Make this as large as possible, size will be reduced to screen size by computed videoSize
+        // Utiliser le preset 4K maximal
         guard let assistant = AVOutputSettingsAssistant(preset: .preset3840x2160) else {
             throw RecordingError("Can't create AVOutputSettingsAssistant with .preset3840x2160")
         }
@@ -232,12 +237,12 @@ struct ScreenRecorder {
             }
         }
 
-        // Create AVAssetWriter input for video, based on the output settings from the Assistant
+        // Create AVAssetWriter input for video
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
         videoInput.expectsMediaDataInRealTime = true
         
         // Configure audio input if an audio device is specified
-        if let audioDeviceId = audioDeviceId {
+        if audioDeviceId != nil {
             let audioSettings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48000,
@@ -254,7 +259,7 @@ struct ScreenRecorder {
         }
         
         // Configure microphone input if a microphone device is specified
-        if let microphoneDeviceId = microphoneDeviceId {
+        if microphoneDeviceId != nil {
             let micSettings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48000,
@@ -291,60 +296,65 @@ struct ScreenRecorder {
 
         // MARK: SCStream setup
 
-        // Create a filter for the specified display
+        // Obtenir le contenu partageable
         let sharableContent = try await SCShareableContent.current
-        print(sharableContent.displays.count, sharableContent.windows.count, sharableContent.applications.count)
+        print("Displays: \(sharableContent.displays.count), Windows: \(sharableContent.windows.count), Apps: \(sharableContent.applications.count)")
         
-        // Find the requested display
+        // Trouver l'écran demandé
         guard let display = sharableContent.displays.first(where: { $0.displayID == displayID }) else {
             throw RecordingError("No display with ID \(displayID) found")
         }
         
         let filter = SCContentFilter(display: display, excludingWindows: [])
         
-        // Configure stream
+        // Configurer le stream
         var config: SCStreamConfiguration
         
         if enableHDR, #available(macOS 13.0, *) {
-            // Pour macOS 15+, utilisez le preset HDR
+            // Pour macOS 15+, utiliser le preset HDR
             if #available(macOS 15.0, *) {
                 let preset = SCStreamConfiguration.Preset.captureHDRStreamCanonicalDisplay
                 config = SCStreamConfiguration(preset: preset)
             } else {
                 // Fallback pour macOS 13-14
                 config = SCStreamConfiguration()
-                // Configuration HDR manuelle si nécessaire
+                // Pour macOS 13-14, nous n'avons pas de méthode simple pour activer HDR
+                // sans utiliser d'API dépréciée
+                print("HDR enabled but limited support on this macOS version")
             }
         } else {
             config = SCStreamConfiguration()
         }
         
+        // Configurer la fréquence d'images
         config.minimumFrameInterval = CMTime(value: 1, timescale: Int32(truncating: NSNumber(value: showCursor ? 60 : 30)))
         config.showsCursor = showCursor
         
-        // Configure microphone capture if needed
+        // Configurer la capture du son système si nécessaire
+        if let audioDeviceId = audioDeviceId {
+            config.capturesAudio = true
+            config.excludesCurrentProcessAudio = true
+            print("System audio capture enabled")
+        }
+        
+        // Configurer la capture de microphone si nécessaire
         if let microphoneDeviceId = microphoneDeviceId {
             if #available(macOS 15.0, *) {
                 config.captureMicrophone = true
                 config.microphoneCaptureDeviceID = microphoneDeviceId
-            } else if #available(macOS 14.0, *) {
-                print("Microphone capture with direct API requested but requires macOS 15.0+")
             } else {
-                print("Microphone capture requested but not supported on this macOS version")
+                print("Microphone capture with direct API requires macOS 15.0+")
             }
         }
         
-        // Create the stream
+        // Créer le stream
         stream = SCStream(filter: filter, configuration: config, delegate: nil)
         
-        // If using direct recording API
+        // Utiliser l'API d'enregistrement direct si spécifié
         if useDirectRecordingAPI {
             if #available(macOS 15.0, *) {
                 let recordingConfig = SCRecordingOutputConfiguration()
                 recordingConfig.outputURL = url
-                
-                // SCRecordingOutputConfiguration n'a pas de propriété fileType
-                // Nous ne définissons que l'URL de sortie
                 
                 let recordingDelegate = RecordingDelegate()
                 let recOutput = SCRecordingOutput(configuration: recordingConfig, delegate: recordingDelegate)
@@ -356,10 +366,13 @@ struct ScreenRecorder {
                     throw RecordingError("Failed to add recording output: \(error)")
                 }
             } else {
-                print("Direct recording API requested but requires macOS 15.0+, falling back to manual recording")
+                print("Direct recording API requires macOS 15.0+, falling back to manual recording")
+                self.useDirectRecording = false
             }
-        } else {
-            // Set up stream output for manual recording
+        }
+        
+        // Configuration de sortie de stream pour l'enregistrement manuel
+        if !useDirectRecordingAPI || !self.useDirectRecording {
             try stream.addStreamOutput(streamOutput, type: .screen, sampleHandlerQueue: videoSampleBufferQueue)
             
             if audioDeviceId != nil {

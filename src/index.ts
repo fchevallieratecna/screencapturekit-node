@@ -52,6 +52,24 @@ const supportsHDR = (() => {
 })();
 
 /**
+ * Checks if the system supports the direct recording API.
+ * @returns {boolean} True if the system supports direct recording API (macOS 15.0+), false otherwise.
+ * @private
+ */
+const supportsDirectRecordingAPI = (() => {
+  return macosVersion.isMacOSVersionGreaterThanOrEqualTo("15.0"); // Direct Recording API requires macOS 15.0+
+})();
+
+/**
+ * Checks if the system supports microphone capture.
+ * @returns {boolean} True if the system supports microphone capture (macOS 15.0+), false otherwise.
+ * @private
+ */
+const supportsMicrophoneCapture = (() => {
+  return macosVersion.isMacOSVersionGreaterThanOrEqualTo("15.0"); // Microphone support with SCStream requires macOS 15.0+
+})();
+
+/**
  * Interface defining a cropping area for recording.
  * @typedef {Object} CropArea
  * @property {number} x - The X position of the starting point of the area.
@@ -198,8 +216,6 @@ class ScreenCaptureKit {
         highlightClicks,
         screenId,
         audioDeviceId,
-        microphoneDeviceId,
-        useDirectRecordingAPI: recordToFile,
       };
 
       if (highlightClicks === true) {
@@ -232,6 +248,26 @@ class ScreenCaptureKit {
           );
         } else {
           recorderOptions.enableHDR = true;
+        }
+      }
+
+      if (microphoneDeviceId) {
+        if (!supportsMicrophoneCapture) {
+          console.warn(
+            "Microphone capture requested but requires macOS 15.0+. This feature will be ignored."
+          );
+        } else {
+          recorderOptions.microphoneDeviceId = microphoneDeviceId;
+        }
+      }
+
+      if (recordToFile) {
+        if (!supportsDirectRecordingAPI) {
+          console.warn(
+            "Direct recording API requested but requires macOS 15.0+. Falling back to manual recording."
+          );
+        } else {
+          recorderOptions.useDirectRecordingAPI = true;
         }
       }
 

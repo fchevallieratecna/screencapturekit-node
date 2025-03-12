@@ -169,6 +169,9 @@ async function main() {
       // Chemin de sortie adapté pour un fichier audio
       outputPath: generateAudioFileName()
     };
+
+    // logs all options in json format
+    console.log(JSON.stringify(options, null, 2));
     
     if (selectedAudioDevice && captureSystemAudio) {
       options.audioDeviceId = selectedAudioDevice.id;
