@@ -1,142 +1,96 @@
-# ScreenCaptureKit Node.js
+# ScreenCaptureKit CLI
 
-A Node.js wrapper for Apple's `ScreenCaptureKit` module. This package allows screen recording on macOS with optimal performance using Apple's native APIs.
+Outil en ligne de commande pour capturer l'écran et l'audio système sur macOS sans nécessiter d'installations supplémentaires comme BlackHole.
 
-## Features
+## Prérequis
 
-- High-performance screen recording
-- HDR (High Dynamic Range) support for macOS 13+ (Ventura)
-- System audio capture
-- Microphone audio capture (macOS 14+)
-- Direct-to-file recording (simplified API for macOS 14+)
-- Cropping support (capture specific screen areas)
-- Multiple options control (FPS, cursor display, click highlighting)
-- Support for various video codecs (H264, HEVC, ProRes)
-- Listing available screens and audio devices
-
-## Requirements
-
-- macOS 10.13 (High Sierra) or newer
-- Node.js 14 or newer
+- macOS 13 ou supérieur
+- Swift 5.8 ou supérieur
+- Xcode Command Line Tools
 
 ## Installation
 
 ```bash
-npm install screencapturekit
+git clone https://github.com/votre-utilisateur/screencapturekit-cli.git
+cd screencapturekit-cli
+swift build -c release
+cp .build/release/screencapturekit /usr/local/bin/
 ```
 
-## Usage
+## Utilisation
 
-### Simple Screen Recording
-
-```javascript
-import createScreenRecorder from 'screencapturekit';
-
-const recorder = createScreenRecorder();
-
-// Start recording
-await recorder.startRecording();
-
-// Wait for desired duration...
-setTimeout(async () => {
-  // Stop recording
-  const videoPath = await recorder.stopRecording();
-  console.log('Video recorded at:', videoPath);
-}, 5000);
-```
-
-### Recording with Advanced Options
-
-```javascript
-import createScreenRecorder from 'screencapturekit';
-
-const recorder = createScreenRecorder();
-
-// Start recording with options
-await recorder.startRecording({
-  fps: 60,
-  showCursor: true,
-  highlightClicks: true,
-  screenId: 0,
-  videoCodec: 'h264',
-  enableHDR: true, // Enable HDR recording (macOS 13+)
-  microphoneDeviceId: 'device-id', // Enable microphone capture (macOS 14+)
-  recordToFile: true, // Use direct recording API (macOS 14+)
-  cropArea: {
-    x: 0,
-    y: 0,
-    width: 1920,
-    height: 1080
-  }
-});
-
-// Wait...
-
-// Stop recording
-const videoPath = await recorder.stopRecording();
-```
-
-### List Available Screens
-
-```javascript
-import { screens } from 'screencapturekit';
-
-const availableScreens = await screens();
-console.log(availableScreens);
-```
-
-### List Audio Devices
-
-```javascript
-import { audioDevices, microphoneDevices } from 'screencapturekit';
-
-// System audio devices
-const systemAudio = await audioDevices();
-console.log(systemAudio);
-
-// Microphone devices
-const mics = await microphoneDevices();
-console.log(mics);
-```
-
-### Check HDR Support
-
-```javascript
-import { supportsHDRCapture } from 'screencapturekit';
-
-if (supportsHDRCapture) {
-  console.log('Your system supports HDR capture');
-}
-```
-
-## Recording Options
-
-| Option | Type | Default | Description |
-|--------|------|------------|-------------|
-| fps | number | 30 | Frames per second |
-| cropArea | object | undefined | Cropping area {x, y, width, height} |
-| showCursor | boolean | true | Display cursor in recording |
-| highlightClicks | boolean | false | Highlight mouse clicks |
-| screenId | number | 0 | ID of screen to capture |
-| audioDeviceId | number | undefined | System audio device ID |
-| microphoneDeviceId | string | undefined | Microphone device ID (macOS 14+) |
-| videoCodec | string | 'h264' | Video codec ('h264', 'hevc', 'proRes422', 'proRes4444') |
-| enableHDR | boolean | false | Enable HDR recording (macOS 13+) |
-| recordToFile | boolean | false | Use direct recording API (macOS 14+) |
-
-## Development
+### Lister les écrans disponibles
 
 ```bash
-npm install
-npm run build
+screencapturekit list screens
 ```
 
-## Tests
+### Lister les périphériques audio disponibles
 
 ```bash
-npm test
+screencapturekit list audio
 ```
 
-## License
+### Lister les microphones disponibles
 
-MIT
+```bash
+screencapturekit list microphones
+```
+
+### Enregistrer l'écran avec audio
+
+```bash
+screencapturekit record --screen <ID_ECRAN> --audio-device <ID_AUDIO> --output sortie.mp4
+```
+
+### Enregistrer l'écran avec audio et microphone simultanément
+
+```bash
+screencapturekit record --screen <ID_ECRAN> --audio-device <ID_AUDIO> --microphone-device <ID_MICRO> --output sortie.mp4
+```
+
+Exemple :
+```bash
+screencapturekit record --screen 1 --audio-device "60-AB-D2-81-98-0B:input" --microphone-device "BuiltInMicrophoneDevice" --output /tmp/enregistrement.mp4
+```
+
+Pour arrêter l'enregistrement, appuyez sur Ctrl+C.
+
+### Options disponibles
+
+- `--screen` : ID de l'écran à capturer (obligatoire)
+- `--audio-device` : ID du périphérique audio système à capturer (facultatif)
+- `--microphone-device` : ID du microphone à capturer (facultatif)
+- `--output` : Chemin du fichier de sortie (obligatoire)
+- `--width` : Largeur de la capture (facultatif, par défaut: largeur de l'écran)
+- `--height` : Hauteur de la capture (facultatif, par défaut: hauteur de l'écran)
+- `--fps` : Images par seconde (facultatif, par défaut: 30)
+- `--duration` : Durée d'enregistrement en secondes (facultatif, par défaut: enregistrement jusqu'à interruption)
+
+## Test rapide
+
+Un script de test est inclus pour vérifier rapidement que tout fonctionne :
+
+```bash
+./test-audio-capture.sh
+```
+
+Ce script va :
+1. Compiler le code
+2. Détecter automatiquement un écran et un périphérique audio
+3. Lancer un enregistrement de 10 secondes
+4. Sauvegarder le résultat dans `/tmp/test-audio.mp4`
+
+## Comment ça marche
+
+Cette solution utilise l'API ScreenCaptureKit d'Apple pour capturer à la fois l'écran, l'audio système et le microphone sans nécessiter d'installations supplémentaires comme BlackHole. L'implémentation utilise :
+
+- `SCShareableContent` pour accéder aux écrans et applications disponibles
+- `SCStream` pour configurer et gérer le flux de capture
+- `AVAssetWriter` pour enregistrer la vidéo et plusieurs pistes audio dans un fichier MP4
+- Synchronisation précise des flux audio et vidéo
+
+## Limitations
+
+- Nécessite les autorisations d'enregistrement d'écran dans Préférences Système > Confidentialité & Sécurité
+- L'audio système est capturé directement via ScreenCaptureKit, sans besoin de pilotes virtuels

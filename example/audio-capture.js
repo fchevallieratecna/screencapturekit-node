@@ -157,8 +157,8 @@ async function main() {
       // Écran requis même pour l'audio uniquement
       screenId: selectedScreen.id,
       // Audio
-      captureSystemAudio,
-      captureMicrophone,
+      captureSystemAudio: false, // Désactivé pour le test
+      captureMicrophone: false, // Désactivé pour le test
       // Taille minimale pour la vidéo
       cropArea: {
         x: 0,
@@ -171,11 +171,17 @@ async function main() {
     };
     
     if (selectedAudioDevice && captureSystemAudio) {
-      options.audioDeviceId = selectedAudioDevice.id;
+      // Assurez-vous que audioDeviceId est bien une chaîne
+      options.audioDeviceId = String(selectedAudioDevice.id);
+      console.log(`\nUtilisation de l'audioDeviceId: ${options.audioDeviceId} (type: ${typeof options.audioDeviceId})`);
+      options.captureSystemAudio = true;
     }
     
     if (selectedMic && captureMicrophone) {
-      options.microphoneId = selectedMic.id;
+      // Assurez-vous que microphoneId est bien une chaîne
+      options.microphoneId = String(selectedMic.id);
+      console.log(`\nUtilisation du microphoneId: ${options.microphoneId} (type: ${typeof options.microphoneId})`);
+      options.captureMicrophone = true;
     }
     
     console.log('\nOptions d\'enregistrement:');

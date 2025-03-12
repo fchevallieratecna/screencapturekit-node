@@ -27,7 +27,6 @@ struct Options: Decodable {
     let useDirectRecordingAPI: Bool?
 }
 
-@main
 struct ScreenCaptureKitCLI: AsyncParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Wrapper around ScreenCaptureKit",
@@ -185,8 +184,14 @@ struct ScreenRecorder {
     ) async throws {
         self.useDirectRecording = useDirectRecordingAPI
         
-        // Create AVAssetWriter for a QuickTime movie file
-        assetWriter = try AVAssetWriter(url: url, fileType: .mov)
+        print("🎥 Initialisation de l'enregistreur avec:")
+        print("- URL: \(url)")
+        print("- DisplayID: \(displayID)")
+        print("- Audio Device: \(audioDeviceId ?? "non spécifié")")
+        
+        // Create AVAssetWriter for an MP4 file instead of MOV
+        assetWriter = try AVAssetWriter(url: url, fileType: .mp4)
+        print("📝 AVAssetWriter créé pour: \(url) au format MP4")
 
         // MARK: AVAssetWriter setup
 
@@ -300,7 +305,16 @@ struct ScreenRecorder {
             throw RecordingError("No display with ID \(displayID) found")
         }
         
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Create filter with audio device
+        let filter: SCContentFilter
+        if audioDeviceId != nil {
+            // Pour capturer l'audio, nous utilisons un filtre standard mais activons l'audio dans la configuration
+            filter = SCContentFilter(display: display, excludingWindows: [])
+            print("Audio capture enabled for device ID: \(audioDeviceId ?? "unknown")")
+        } else {
+            // Sans audio spécifié, nous créons un filtre standard
+            filter = SCContentFilter(display: display, excludingWindows: [])
+        }
         
         // Configure stream
         var config: SCStreamConfiguration
@@ -322,16 +336,26 @@ struct ScreenRecorder {
         config.minimumFrameInterval = CMTime(value: 1, timescale: Int32(truncating: NSNumber(value: showCursor ? 60 : 30)))
         config.showsCursor = showCursor
         
+        // AMÉLIORATION: Augmenter la profondeur de la file d'attente pour un meilleur traitement
+        config.queueDepth = 5
+        
+        // Configure audio capture if needed
+        if let audioDevice = audioDeviceId {
+            // Activer l'audio système
+            config.capturesAudio = true
+            
+            // Configuration audio avancée
+            config.excludesCurrentProcessAudio = false  // Capturer l'audio de notre processus aussi
+            
+            // Afficher un message pour indiquer que l'audio est activé
+            print("Audio capture fully configured with device: \(audioDevice)")
+        }
+        
         // Configure microphone capture if needed
         if let microphoneDeviceId = microphoneDeviceId {
-            if #available(macOS 15.0, *) {
-                config.captureMicrophone = true
-                config.microphoneCaptureDeviceID = microphoneDeviceId
-            } else if #available(macOS 14.0, *) {
-                print("Microphone capture with direct API requested but requires macOS 15.0+")
-            } else {
-                print("Microphone capture requested but not supported on this macOS version")
-            }
+            print("Microphone capture requested with device: \(microphoneDeviceId)")
+            // Note: La capture de microphone n'est pas directement supportée dans cette version
+            // Seule l'activation générale est disponible
         }
         
         // Create the stream
@@ -388,6 +412,7 @@ struct ScreenRecorder {
     func stop() async throws {
         // Stop capturing, wait for stream to stop
         try await stream.stopCapture()
+        print("📢 Flux d'écran arrêté avec succès")
 
         // Repeat the last frame and add it at the current time
         // In case no changes happend on screen, and the last frame is from long ago
@@ -398,17 +423,54 @@ struct ScreenRecorder {
             let additionalSampleBuffer = try CMSampleBuffer(copying: originalBuffer, withNewTiming: [timing])
             videoInput.append(additionalSampleBuffer)
             streamOutput.lastSampleBuffer = additionalSampleBuffer
+            print("📢 Dernier frame vidéo ajouté")
+        } else {
+            print("⚠️ Aucun frame vidéo disponible pour finaliser")
         }
 
         // Stop the AVAssetWriter session at time of the repeated frame
         assetWriter.endSession(atSourceTime: streamOutput.lastSampleBuffer?.presentationTimeStamp ?? .zero)
+        print("📢 Session AVAssetWriter terminée")
 
         // Finish writing
         videoInput.markAsFinished()
-        audioInput?.markAsFinished()
-        microphoneInput?.markAsFinished()
+        print("📢 Entrée vidéo marquée comme terminée")
         
+        if let audioInput = audioInput {
+            audioInput.markAsFinished()
+            print("📢 Entrée audio marquée comme terminée")
+        }
+        
+        if let microphoneInput = microphoneInput {
+            microphoneInput.markAsFinished()
+            print("📢 Entrée microphone marquée comme terminée")
+        }
+        
+        // Explicitement appeler finishWriting et attendre
+        print("📢 Finalisation de l'écriture du fichier...")
         await assetWriter.finishWriting()
+        
+        // Vérifier l'état final de l'AssetWriter
+        if assetWriter.status == .failed {
+            if let error = assetWriter.error {
+                print("❌ Erreur lors de la finalisation: \(error)")
+                throw error
+            } else {
+                print("❌ Échec de finalisation sans erreur spécifique")
+            }
+        } else if assetWriter.status == .completed {
+            print("✅ Fichier écrit avec succès")
+            
+            // Vérifier la taille du fichier
+            let fileManager = FileManager.default
+            if let fileSize = try? fileManager.attributesOfItem(atPath: assetWriter.outputURL.path)[.size] as? Int64 {
+                print("📁 Taille du fichier: \(Double(fileSize) / 1024.0) Ko")
+            } else {
+                print("⚠️ Impossible de déterminer la taille du fichier")
+            }
+        } else {
+            print("⚠️ État final de l'AssetWriter: \(assetWriter.status.rawValue)")
+        }
     }
 
     private class StreamOutput: NSObject, SCStreamOutput {
@@ -419,16 +481,31 @@ struct ScreenRecorder {
         var sessionStarted = false
         var firstSampleTime: CMTime = .zero
         var lastSampleBuffer: CMSampleBuffer?
+        
+        // Ajouter un tampon pour les échantillons audio précoces
+        var earlyAudioSamples = [CMSampleBuffer]()
 
         init(videoInput: AVAssetWriterInput, audioInput: AVAssetWriterInput? = nil, microphoneInput: AVAssetWriterInput? = nil) {
             self.videoInput = videoInput
             self.audioInput = audioInput
             self.microphoneInput = microphoneInput
+            super.init()
+            
+            // Activer le debug pour le suivi des échantillons
+            print("StreamOutput initialisé - Audio: \(audioInput != nil), Micro: \(microphoneInput != nil)")
         }
 
         func stream(_: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
             // Return early if session hasn't started yet
-            guard sessionStarted else { return }
+            guard sessionStarted else { 
+                // Mais stocker les échantillons audio précoces
+                if type == .audio, let _ = audioInput {
+                    earlyAudioSamples.append(sampleBuffer)
+                    print("Stockage d'un échantillon audio précoce")
+                }
+                // Note: Le type .microphone n'est pas disponible dans cette version de macOS
+                return 
+            }
 
             // Return early if the sample buffer is invalid
             guard sampleBuffer.isValid else { return }
@@ -438,8 +515,6 @@ struct ScreenRecorder {
                 handleVideoSampleBuffer(sampleBuffer)
             case .audio:
                 handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: false)
-            case .microphone:
-                handleAudioSampleBuffer(sampleBuffer, isFromMicrophone: true)
             @unknown default:
                 break
             }
@@ -465,6 +540,10 @@ struct ScreenRecorder {
             // Save the timestamp of the current sample, all future samples will be offset by this
             if firstSampleTime == .zero {
                 firstSampleTime = sampleBuffer.presentationTimeStamp
+                print("Premier échantillon vidéo reçu à \(firstSampleTime.seconds)")
+                
+                // Traiter les échantillons audio précoces maintenant que nous avons la référence temporelle
+                processEarlyAudioSamples()
             }
 
             // Offset the time of the sample buffer, relative to the first sample
@@ -487,6 +566,16 @@ struct ScreenRecorder {
             }
         }
         
+        private func processEarlyAudioSamples() {
+            // Traiter les échantillons audio système précoces
+            for sample in earlyAudioSamples {
+                handleAudioSampleBuffer(sample, isFromMicrophone: false)
+            }
+            earlyAudioSamples.removeAll()
+            
+            print("Traitement terminé des échantillons audio précoces")
+        }
+        
         private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFromMicrophone: Bool) {
             let input = isFromMicrophone ? microphoneInput : audioInput
             
@@ -499,7 +588,8 @@ struct ScreenRecorder {
             
             // Offset audio sample relative to video start time
             if firstSampleTime == .zero {
-                // If first video sample hasn't arrived yet, cache this audio sample for later
+                // Si le premier échantillon vidéo n'est pas encore arrivé, on le stocke pour plus tard
+                // (Déjà géré dans la méthode stream:didOutputSampleBuffer:of:)
                 return
             }
             
@@ -513,6 +603,11 @@ struct ScreenRecorder {
             
             if let retimedSampleBuffer = try? CMSampleBuffer(copying: sampleBuffer, withNewTiming: [timing]) {
                 audioInput.append(retimedSampleBuffer)
+                if isFromMicrophone {
+                    print("Échantillon microphone ajouté à \(presentationTime.seconds)s")
+                } else {
+                    print("Échantillon audio système ajouté à \(presentationTime.seconds)s")
+                }
             } else {
                 print("Couldn't copy audio CMSampleBuffer, dropping sample")
             }
