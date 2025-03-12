@@ -164,6 +164,8 @@ type RecordingOptionsForScreenCaptureKit = {
   useDirectRecordingAPI?: boolean; // Use new recording API
 };
 
+export type { RecordingOptionsForScreenCaptureKit };
+
 /**
  * Main class for screen recording with ScreenCaptureKit.
  * Allows capturing the screen using Apple's native APIs.
