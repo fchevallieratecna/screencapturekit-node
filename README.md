@@ -7,8 +7,9 @@ A Node.js wrapper for Apple's `ScreenCaptureKit` module. This package allows scr
 - High-performance screen recording
 - HDR (High Dynamic Range) support for macOS 13+ (Ventura)
 - System audio capture
-- Microphone audio capture (macOS 14+)
-- Direct-to-file recording (simplified API for macOS 14+)
+- Microphone audio capture (macOS 15+)
+- Direct-to-file recording (simplified API for macOS 15+)
+- Audio mixing capabilities (system audio + microphone)
 - Cropping support (capture specific screen areas)
 - Multiple options control (FPS, cursor display, click highlighting)
 - Support for various video codecs (H264, HEVC, ProRes)
@@ -60,8 +61,9 @@ await recorder.startRecording({
   screenId: 0,
   videoCodec: 'h264',
   enableHDR: true, // Enable HDR recording (macOS 13+)
-  microphoneDeviceId: 'device-id', // Enable microphone capture (macOS 14+)
-  recordToFile: true, // Use direct recording API (macOS 14+)
+  microphoneDeviceId: 'device-id', // Enable microphone capture (macOS 15+)
+  recordToFile: true, // Use direct recording API (macOS 15+)
+  mixAudio: true, // Mix system audio and microphone (macOS 15+)
   cropArea: {
     x: 0,
     y: 0,
@@ -99,13 +101,21 @@ const mics = await microphoneDevices();
 console.log(mics);
 ```
 
-### Check HDR Support
+### Check Support for Features
 
 ```javascript
-import { supportsHDRCapture } from 'screencapturekit';
+import { supportsHDRCapture, supportsDirectRecordingAPI, supportsMicrophoneCapture } from 'screencapturekit';
 
 if (supportsHDRCapture) {
   console.log('Your system supports HDR capture');
+}
+
+if (supportsDirectRecordingAPI) {
+  console.log('Your system supports direct-to-file recording');
+}
+
+if (supportsMicrophoneCapture) {
+  console.log('Your system supports microphone capture');
 }
 ```
 
@@ -119,10 +129,11 @@ if (supportsHDRCapture) {
 | highlightClicks | boolean | false | Highlight mouse clicks |
 | screenId | number | 0 | ID of screen to capture |
 | audioDeviceId | number | undefined | System audio device ID |
-| microphoneDeviceId | string | undefined | Microphone device ID (macOS 14+) |
+| microphoneDeviceId | string | undefined | Microphone device ID (macOS 15+) |
 | videoCodec | string | 'h264' | Video codec ('h264', 'hevc', 'proRes422', 'proRes4444') |
 | enableHDR | boolean | false | Enable HDR recording (macOS 13+) |
-| recordToFile | boolean | false | Use direct recording API (macOS 14+) |
+| recordToFile | boolean | false | Use direct recording API (macOS 15+) |
+| mixAudio | boolean | false | Mix system audio and microphone (macOS 15+) |
 
 ## Development
 
