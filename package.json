@@ -55,7 +55,6 @@
   "homepage": "https://github.com/fchevallieratecna/screencapturekit-node#readme",
   "dependencies": {
     "delay": "^6.0.0",
-    "electron-util": "^0.18.1",
     "execa": "^8.0.1",
     "file-url": "^4.0.0",
     "macos-version": "^6.0.0",
