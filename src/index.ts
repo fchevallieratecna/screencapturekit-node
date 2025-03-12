@@ -6,6 +6,7 @@ import fileUrl from "file-url";
 // import { fixPathForAsarUnpack } from "electron-util";
 import { execa, type ExecaChildProcess } from "execa";
 import { fileURLToPath } from "url";
+import fs from "node:fs/promises";
 
 /**
  * Generates a random identifier composed of alphanumeric characters.
@@ -97,6 +98,7 @@ type CropArea = {
  * @property {string} videoCodec - Video codec to use.
  * @property {boolean} [enableHDR] - Enable HDR recording (on macOS 13.0+).
  * @property {boolean} [recordToFile] - Use the direct recording API (on macOS 14.0+).
+ * @property {boolean} [mixAudio] - Mix audio and microphone.
  */
 type RecordingOptions = {
   fps: number;
@@ -109,6 +111,7 @@ type RecordingOptions = {
   videoCodec: string;
   enableHDR?: boolean; // Added support for HDR
   recordToFile?: boolean; // Added support for direct file recording
+  mixAudio?: boolean; // Added support for mixing audio and microphone
 };
 
 /**
@@ -125,6 +128,7 @@ type RecordingOptions = {
  * @property {Array} [cropRect] - Coordinates of the cropping area.
  * @property {boolean} [enableHDR] - Enable HDR recording.
  * @property {boolean} [useDirectRecordingAPI] - Use the direct recording API.
+ * @property {boolean} [mixAudio] - Mix audio and microphone.
  * @private
  */
 type RecordingOptionsForScreenCaptureKit = {
@@ -139,6 +143,7 @@ type RecordingOptionsForScreenCaptureKit = {
   cropRect?: [[x: number, y: number], [width: number, height: number]];
   enableHDR?: boolean; // Added support for HDR
   useDirectRecordingAPI?: boolean; // Use new recording API
+  mixAudio?: boolean; // Added support for mixing audio and microphone
 };
 
 /**
@@ -152,6 +157,10 @@ class ScreenCaptureKit {
   recorder?: ExecaChildProcess;
   /** Unique identifier of the recording process. */
   processId: string | null = null;
+  /** Options used for recording */
+  private currentOptions?: Partial<RecordingOptions>;
+  /** Path to the final processed video file */
+  processedVideoPath: string | null = null;
 
   /**
    * Creates a new instance of ScreenCaptureKit.
@@ -186,6 +195,7 @@ class ScreenCaptureKit {
    * @param {string} [options.videoCodec="h264"] - Video codec to use.
    * @param {boolean} [options.enableHDR=false] - Enable HDR recording.
    * @param {boolean} [options.recordToFile=false] - Use the direct recording API.
+   * @param {boolean} [options.mixAudio=false] - Mix audio and microphone.
    * @returns {Promise<void>} A promise that resolves when recording starts.
    * @throws {Error} If recording is already in progress or if the options are invalid.
    */
@@ -200,8 +210,24 @@ class ScreenCaptureKit {
     videoCodec = "h264",
     enableHDR = false,
     recordToFile = false,
+    mixAudio = false,
   }: Partial<RecordingOptions> = {}) {
     this.processId = getRandomId();
+    // Stocke les options actuelles pour utilisation ultérieure
+    this.currentOptions = {
+      fps,
+      cropArea,
+      showCursor,
+      highlightClicks,
+      screenId,
+      audioDeviceId,
+      microphoneDeviceId,
+      videoCodec,
+      enableHDR,
+      recordToFile,
+      mixAudio,
+    };
+    
     return new Promise((resolve, reject) => {
       if (this.recorder !== undefined) {
         reject(new Error("Call `.stopRecording()` first"));
@@ -258,6 +284,12 @@ class ScreenCaptureKit {
           );
         } else {
           recorderOptions.microphoneDeviceId = microphoneDeviceId;
+          
+          // Si l'option de mixage audio est activée et que nous avons à la fois l'audio système et un microphone
+          if (mixAudio && audioDeviceId) {
+            recorderOptions.mixAudio = true;
+            console.log("Audio mixing enabled: system audio and microphone will be mixed into a single track");
+          }
         }
       }
 
@@ -295,18 +327,98 @@ class ScreenCaptureKit {
   }
 
   /**
-   * Stops the ongoing recording.
-   * @returns {Promise<string|null>} A promise that resolves with the path to the video file.
+   * Stops the ongoing recording and processes the video to merge audio tracks if needed.
+   * @returns {Promise<string|null>} A promise that resolves with the path to the processed video file.
    * @throws {Error} If recording has not been started.
    */
   async stopRecording() {
     this.throwIfNotStarted();
-    console.log("killing recorder");
+    console.log("Arrêt de l'enregistrement");
     this.recorder?.kill();
     await this.recorder;
-    console.log("killed recorder");
+    console.log("Enregistrement arrêté");
     this.recorder = undefined;
 
+    // Si nous avons plusieurs sources audio, nous devons les fusionner
+    const hasMultipleAudioTracks = !!(
+      this.currentOptions?.audioDeviceId && 
+      this.currentOptions?.microphoneDeviceId && 
+      !this.currentOptions?.mixAudio
+    );
+
+    if (hasMultipleAudioTracks && this.videoPath) {
+      try {
+        console.log("Fusion des pistes audio avec ffmpeg");
+        this.processedVideoPath = temporaryFile({ extension: "mp4" });
+        
+        // Vérifier la structure du fichier avec ffprobe
+        const { stdout: probeOutput } = await execa("ffprobe", [
+          "-v", "error",
+          "-show_entries", "stream=index,codec_type",
+          "-of", "json",
+          this.videoPath
+        ]);
+        
+        const probeResult = JSON.parse(probeOutput);
+        const streams = probeResult.streams || [];
+        
+        // Identifier les indices des flux audio et vidéo
+        const audioStreams = streams
+          .filter((stream: {codec_type: string; index: number}) => stream.codec_type === "audio")
+          .map((stream: {index: number}) => stream.index);
+          
+        const videoStream = streams
+          .find((stream: {codec_type: string; index: number}) => stream.codec_type === "video")?.index;
+          
+        if (audioStreams.length < 2 || videoStream === undefined) {
+          console.log("Pas assez de pistes audio pour fusionner ou pas de piste vidéo");
+          return this.videoPath;
+        }
+        
+        // Construire un filtre complex plus sophistiqué pour ajuster le volume du microphone
+        // On considère que la première piste (0) est l'audio système et la deuxième (1) est le microphone
+        const systemAudioIndex = audioStreams[0];
+        const microphoneIndex = audioStreams[1];
+        
+        // Filtre complex avec ajustement de volume :
+        // 1. Garder l'audio système à volume normal (0.8)
+        // 2. Amplifier le volume du microphone (2.5)
+        // 3. Fusionner les deux pistes
+        const filterComplex = `[0:${systemAudioIndex}]volume=0.5[a1];[0:${microphoneIndex}]volume=3.8[a2];[a1][a2]amerge=inputs=2[aout]`;
+        
+        // Commande ffmpeg avec syntaxe corrigée
+        await execa("ffmpeg", [
+          "-i", this.videoPath,
+          "-filter_complex", filterComplex,
+          "-map", "[aout]",                 // Sortie audio fusionnée
+          "-map", `0:${videoStream}`,       // Piste vidéo
+          "-c:v", "copy",                   // Copier la vidéo sans réencodage
+          "-c:a", "aac",                    // Encoder l'audio en AAC
+          "-b:a", "256k",                    // Bitrate audio
+          "-ac", "2",                        // Sortie stéréo (2 canaux)
+          "-y",                              // Écraser le fichier s'il existe
+          this.processedVideoPath
+        ]);
+        
+        console.log(`Pistes audio fusionnées: ${this.processedVideoPath}`);
+        return this.processedVideoPath;
+      } catch (error) {
+        console.error("Erreur lors de la fusion des pistes audio:", error);
+        
+        // Journaliser plus d'informations sur l'erreur pour le débogage
+        if (error instanceof Error) {
+          console.error("Détails de l'erreur:", error.message);
+          if ('stderr' in error) {
+            console.error("Sortie d'erreur de ffmpeg:", (error as any).stderr);
+          }
+        }
+        
+        // En cas d'échec, retourner le fichier original
+        return this.videoPath;
+      }
+    }
+
+    // Si pas de traitement nécessaire, retourner le fichier original
     return this.videoPath;
   }
 }

@@ -178,7 +178,7 @@ async function main() {
     }
     
     if (selectedMic && captureMicrophone) {
-      options.microphoneId = selectedMic.id;
+      options.microphoneDeviceId = selectedMic.id;
     }
     
     console.log('\nOptions d\'enregistrement:');
