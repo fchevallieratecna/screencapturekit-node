@@ -1,6 +1,6 @@
 {
   "name": "screencapturekit",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "A nodejs wrapper over a swift CLI program which is a wrapper over ScreenCaptureKit module with HDR and microphone support",
   "type": "module",
   "exports": {
