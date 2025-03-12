@@ -1,15 +1,10 @@
 import os from "node:os";
-import path from "node:path";
 import { temporaryFile } from "tempy";
 import * as macosVersion from "macos-version";
 import fileUrl from "file-url";
 import { execa, type ExecaChildProcess } from "execa";
 import { resolvePackagePath } from "./utils/packagePaths.js";
 
-// Simplified BIN path - Assuming 'screencapturekit' binary is directly in the same directory as index.cjs
-console.log("================================================")
-console.log(resolvePackagePath("./screencapturekit"));
-console.log("================================================")
 const BIN = resolvePackagePath("./screencapturekit"); // Simplified path
 
 /**
@@ -86,6 +81,28 @@ type CropArea = {
   height: number;
 };
 
+export type { CropArea };
+
+type Screen = {
+  id: number;
+  width: number;
+  height: number;
+};
+
+export type { Screen };
+
+type AudioDevice = {
+  id: string;
+  name: string;
+  manufacturer: string;
+};
+
+export type { AudioDevice };
+
+type MicrophoneDevice = AudioDevice;
+
+export type { MicrophoneDevice };
+
 /**
  * Options for screen recording.
  * @typedef {Object} RecordingOptions
@@ -108,12 +125,14 @@ type RecordingOptions = {
   highlightClicks: boolean;
   screenId: number;
   audioDeviceId?: number;
-  microphoneDeviceId?: string; // Added support for microphone capture
+  microphoneDeviceId?: string;
   videoCodec: string;
-  enableHDR?: boolean; // Added support for HDR
-  recordToFile?: boolean; // Added support for direct file recording
-  audioOnly?: boolean; // Added support for audio only recording
+  enableHDR?: boolean;
+  recordToFile?: boolean;
+  audioOnly?: boolean;
 };
+
+export type { RecordingOptions };
 
 /**
  * Internal options for recording with ScreenCaptureKit.
@@ -455,9 +474,9 @@ function getCodecs() {
  * @returns {Promise<Array>} A promise that resolves with an array of objects representing the screens.
  * Each object contains the properties id, width, and height.
  */
-export const screens = async () => {
+export const screens = async (): Promise<Screen[] | string> => {
   const { stderr } = await execa(BIN, ["list", "screens"]);
-
+console.log("stderr", stderr);
   try {
     return JSON.parse(stderr);
   } catch {
@@ -470,9 +489,9 @@ export const screens = async () => {
  * @returns {Promise<Array>} A promise that resolves with an array of objects representing the audio devices.
  * Each object contains the properties id, name, and manufacturer.
  */
-export const audioDevices = async () => {
+export const audioDevices = async (): Promise<AudioDevice[] | string> => {
   const { stderr } = await execa(BIN, ["list", "audio-devices"]);
-
+  console.log("stderr", stderr);
   try {
     return JSON.parse(stderr);
   } catch {
@@ -485,9 +504,9 @@ export const audioDevices = async () => {
  * @returns {Promise<Array>} A promise that resolves with an array of objects representing the microphones.
  * Each object contains the properties id, name, and manufacturer.
  */
-export const microphoneDevices = async () => {
+export const microphoneDevices = async (): Promise<MicrophoneDevice[] | string> => {
   const { stderr } = await execa(BIN, ["list", "microphone-devices"]);
-
+  console.log("stderr", stderr);
   try {
     return JSON.parse(stderr);
   } catch {

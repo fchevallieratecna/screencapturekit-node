@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Example usage of screencapturekit-node",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js",
     "multi-screen": "node multi-screen.js",

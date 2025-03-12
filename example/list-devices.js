@@ -1,5 +1,5 @@
 // Example of listing screens and audio devices
-import { screens, audioDevices, microphoneDevices, supportsHDRCapture, videoCodecs } from 'screencapturekit';
+import { screens, audioDevices, microphoneDevices, supportsHDRCapture, videoCodecs } from '../dist/index.js';
 
 async function main() {
   try {
