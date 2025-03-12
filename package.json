@@ -14,7 +14,7 @@
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.cts",
   "engines": {
     "node": ">=16",
     "os": "darwin"
@@ -55,6 +55,7 @@
   "homepage": "https://github.com/fchevallieratecna/screencapturekit-node#readme",
   "dependencies": {
     "delay": "^6.0.0",
+    "electron-util": "^0.18.1",
     "execa": "^8.0.1",
     "file-url": "^4.0.0",
     "macos-version": "^6.0.0",

@@ -1,9 +1,9 @@
 Directory Tree:
 screencapturekit-node/
-│   ├── tsup.config.js
 │   ├── license
 │   ├── README.md
 │   ├── Package.resolved
+│   ├── full_code.txt
 │   ├── .gitignore
 │   ├── tsup.config.ts
 │   ├── Package.swift
@@ -33,28 +33,6 @@ screencapturekit-node/
 │   │   │   ├── file-url.d.ts
 
 
-
-
-# ======================
-# File: tsup.config.js
-# ======================
-
-import { defineConfig } from "tsup";
-
-const isProduction = process.env.NODE_ENV === "production";
-
-export default defineConfig(({ watch = false }) => ({
-  clean: true,
-  dts: true,
-  entry: {
-    index: "src/index.ts",
-  },
-  external: [],
-  format: ["esm"],
-  minify: isProduction,
-  sourcemap: isProduction,
-  watch,
-}));
 
 
 # ======================
@@ -263,17 +241,21 @@ MIT
 # File: tsup.config.ts
 # ======================
 
-import { defineConfig } from 'tsup'
+import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ['src/index.ts'],
-  format: ['cjs', 'esm'],
+  entry: ["src/index.ts"],
+  format: ["cjs", "esm"],
   dts: true,
   clean: true,
   splitting: false,
   sourcemap: true,
   minify: false,
-}) 
+  define: {
+    __dirname_cjs_shim: "__dirname",
+  }
+});
+
 
 # ======================
 # File: Package.swift
@@ -2255,21 +2237,19 @@ import path from "node:path";
 import { temporaryFile } from "tempy";
 import * as macosVersion from "macos-version";
 import fileUrl from "file-url";
-// import { fixPathForAsarUnpack } from "electron-util";
 import { execa, type ExecaChildProcess } from "execa";
 import { fileURLToPath } from "url";
-import fs from "node:fs/promises";
 
-declare var __dirname_cjs_shim: string;
-
-// Gestion du chemin compatible ESM et CJS
-let __dirname;
-if (typeof import.meta.url !== 'undefined') {
-    __dirname = path.dirname(fileURLToPath(import.meta.url));
-} else {
-    __dirname = process.cwd(); // Fallback vers le répertoire de travail actuel
+// Force __dirname based on __filename -  Assume CommonJS context for node integration
+if (typeof __filename === 'undefined') {
+    throw new Error("__filename is undefined in CommonJS context.  This is unexpected.");
 }
-const BIN = path.join(__dirname, "../dist/screencapturekit");
+const __dirname = path.dirname(__filename); // Forcefully define __dirname from __filename
+
+console.log("__dirname (forced from __filename):", __dirname); // Log for debugging
+
+// Simplified BIN path - Assuming 'screencapturekit' binary is directly in the same directory as index.cjs
+const BIN = path.join(__dirname, "screencapturekit"); // Simplified path
 
 /**
  * Generates a random identifier composed of alphanumeric characters.
