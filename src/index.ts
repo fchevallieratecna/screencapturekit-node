@@ -350,6 +350,7 @@ class ScreenCaptureKit {
       try {
         console.log("Fusion des pistes audio avec ffmpeg");
         this.processedVideoPath = temporaryFile({ extension: "mp4" });
+        const audioPath = temporaryFile({ extension: "mp3" });
         
         // Vérifier la structure du fichier avec ffprobe
         const { stdout: probeOutput } = await execa("ffprobe", [
@@ -375,50 +376,43 @@ class ScreenCaptureKit {
           return this.videoPath;
         }
         
-        // Construire un filtre complex plus sophistiqué pour ajuster le volume du microphone
-        // On considère que la première piste (0) est l'audio système et la deuxième (1) est le microphone
         const systemAudioIndex = audioStreams[0];
         const microphoneIndex = audioStreams[1];
         
-        // Filtre complex avec ajustement de volume :
-        // 1. Garder l'audio système à volume normal (0.8)
-        // 2. Amplifier le volume du microphone (2.5)
-        // 3. Fusionner les deux pistes
-        const filterComplex = `[0:${systemAudioIndex}]volume=0.5[a1];[0:${microphoneIndex}]volume=3.8[a2];[a1][a2]amerge=inputs=2[aout]`;
+        const filterComplex = `[0:${systemAudioIndex}]volume=1[a1];[0:${microphoneIndex}]volume=3[a2];[a1][a2]amerge=inputs=2[aout]`;
         
-        // Commande ffmpeg avec syntaxe corrigée
+        // Traitement vidéo
         await execa("ffmpeg", [
           "-i", this.videoPath,
           "-filter_complex", filterComplex,
-          "-map", "[aout]",                 // Sortie audio fusionnée
-          "-map", `0:${videoStream}`,       // Piste vidéo
-          "-c:v", "copy",                   // Copier la vidéo sans réencodage
-          "-c:a", "aac",                    // Encoder l'audio en AAC
-          "-b:a", "256k",                    // Bitrate audio
-          "-ac", "2",                        // Sortie stéréo (2 canaux)
-          "-y",                              // Écraser le fichier s'il existe
+          "-map", "[aout]",
+          "-map", `0:${videoStream}`,
+          "-c:v", "copy",
+          "-c:a", "aac",
+          "-b:a", "256k",
+          "-ac", "2",
+          "-y",
           this.processedVideoPath
         ]);
         
-        console.log(`Pistes audio fusionnées: ${this.processedVideoPath}`);
-        return this.processedVideoPath;
+        // Extraire l'audio en MP3
+        await execa("ffmpeg", [
+          "-i", this.processedVideoPath,
+          "-vn",
+          "-c:a", "libmp3lame",
+          "-b:a", "192k",
+          "-y",
+          audioPath
+        ]);
+        
+        console.log(`Audio extrait en MP3: ${audioPath}`);
+        return { videoPath: this.processedVideoPath, audioPath };
       } catch (error) {
-        console.error("Erreur lors de la fusion des pistes audio:", error);
-        
-        // Journaliser plus d'informations sur l'erreur pour le débogage
-        if (error instanceof Error) {
-          console.error("Détails de l'erreur:", error.message);
-          if ('stderr' in error) {
-            console.error("Sortie d'erreur de ffmpeg:", (error as any).stderr);
-          }
-        }
-        
-        // En cas d'échec, retourner le fichier original
+        console.error("Erreur lors du traitement:", error);
         return this.videoPath;
       }
     }
 
-    // Si pas de traitement nécessaire, retourner le fichier original
     return this.videoPath;
   }
 }
