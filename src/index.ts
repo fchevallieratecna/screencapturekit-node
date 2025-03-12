@@ -3,10 +3,19 @@ import path from "node:path";
 import { temporaryFile } from "tempy";
 import * as macosVersion from "macos-version";
 import fileUrl from "file-url";
-// import { fixPathForAsarUnpack } from "electron-util";
 import { execa, type ExecaChildProcess } from "execa";
 import { fileURLToPath } from "url";
-import fs from "node:fs/promises";
+
+declare var __dirname_cjs_shim: string;
+
+// Gestion du chemin compatible ESM et CJS
+let __dirname;
+if (typeof import.meta.url !== 'undefined') {
+    __dirname = path.dirname(fileURLToPath(import.meta.url));
+} else {
+    __dirname = __dirname_cjs_shim; // Utiliser un shim pour __dirname en CommonJS
+}
+const BIN = path.join(__dirname, "../dist/screencapturekit");
 
 /**
  * Generates a random identifier composed of alphanumeric characters.
@@ -14,10 +23,6 @@ import fs from "node:fs/promises";
  * @private
  */
 const getRandomId = () => Math.random().toString(36).slice(2, 15);
-
-// Gestion du chemin compatible ESM et CJS
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BIN = path.join(__dirname, "../dist/screencapturekit");
 
 /**
  * Checks if the system supports HEVC (H.265) hardware encoding.
