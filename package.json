@@ -21,7 +21,7 @@
     "build": "tsup && npm run build-swift",
     "build-swift": "swift build --configuration=release --arch arm64 --arch x86_64 && mv .build/apple/Products/Release/screencapturekit ./dist",
     "prepare": "mkdir -p dist",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "git clean -fdx dist && npm install && npm run build",
     "postinstall": "npm run build-swift",
     "dev": "tsup --watch",
     "format": "prettier --write .",
