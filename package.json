@@ -10,6 +10,12 @@
     },
     "./package.json": "./package.json"
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=16",
+    "os": "darwin"
+  },
   "scripts": {
     "test": "vitest",
     "build": "tsup && npm run build-swift",
@@ -22,7 +28,8 @@
   "files": [
     "dist/**/*",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "package.json"
   ],
   "repository": {
     "type": "git",
