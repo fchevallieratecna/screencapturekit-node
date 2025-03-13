@@ -19,11 +19,9 @@ export const getPackageRoot = () => {
     const packageMainPath = require.resolve("screencapturekit");
     if (typeof process.resourcesPath === "string" && app?.isPackaged) {
       const finalPath = path.join(process.resourcesPath);
-      console.log("finalPath : CJS", finalPath);
       return finalPath;
     }
     const finalPath = path.dirname(packageMainPath);
-    console.log("finalPath : CJS", finalPath);
     return finalPath;
   } catch (e) {
     // Fallback pour le développement ES modules

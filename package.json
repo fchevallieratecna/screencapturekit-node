@@ -54,16 +54,14 @@
   },
   "homepage": "https://github.com/fchevallieratecna/screencapturekit-node#readme",
   "dependencies": {
-    "delay": "^6.0.0",
     "execa": "^8.0.1",
-    "file-url": "^4.0.0",
     "macos-version": "^6.0.0",
-    "tempy": "^3.1.0",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/execa": "^2.0.0",
     "@types/node": "^20.10.5",
+    "delay": "^6.0.0",
     "file-type": "^19.0.0",
     "prettier": "^3.1.1",
     "read-chunk": "^4.0.3",

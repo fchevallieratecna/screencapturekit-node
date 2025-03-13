@@ -111,7 +111,7 @@ export type { MicrophoneDevice };
  * @property {boolean} showCursor - Show the cursor in the recording.
  * @property {boolean} highlightClicks - Highlight mouse clicks.
  * @property {number} screenId - Identifier of the screen to capture.
- * @property {number} [audioDeviceId] - Identifier of the system audio device.
+ * @property {string} [audioDeviceId] - Identifier of the system audio device.
  * @property {string} [microphoneDeviceId] - Identifier of the microphone device.
  * @property {string} videoCodec - Video codec to use.
  * @property {boolean} [enableHDR] - Enable HDR recording (on macOS 13.0+).
@@ -124,9 +124,9 @@ type RecordingOptions = {
   showCursor: boolean;
   highlightClicks: boolean;
   screenId: number;
-  audioDeviceId?: number;
+  audioDeviceId?: string;
   microphoneDeviceId?: string;
-  videoCodec: string;
+  videoCodec?: string;
   enableHDR?: boolean;
   recordToFile?: boolean;
   audioOnly?: boolean;
@@ -142,7 +142,7 @@ export type { RecordingOptions };
  * @property {boolean} showCursor - Show the cursor in the recording.
  * @property {boolean} highlightClicks - Highlight mouse clicks.
  * @property {number} screenId - Identifier of the screen to capture.
- * @property {number} [audioDeviceId] - Identifier of the system audio device.
+ * @property {string} [audioDeviceId] - Identifier of the system audio device.
  * @property {string} [microphoneDeviceId] - Identifier of the microphone device.
  * @property {string} [videoCodec] - Video codec to use.
  * @property {Array} [cropRect] - Coordinates of the cropping area.
@@ -156,12 +156,12 @@ type RecordingOptionsForScreenCaptureKit = {
   showCursor: boolean;
   highlightClicks: boolean;
   screenId: number;
-  audioDeviceId?: number;
-  microphoneDeviceId?: string; // Added support for microphone
+  audioDeviceId?: string;
+  microphoneDeviceId?: string;
   videoCodec?: string;
   cropRect?: [[x: number, y: number], [width: number, height: number]];
-  enableHDR?: boolean; // Added support for HDR
-  useDirectRecordingAPI?: boolean; // Use new recording API
+  enableHDR?: boolean;
+  useDirectRecordingAPI?: boolean;
 };
 
 export type { RecordingOptionsForScreenCaptureKit };
@@ -170,7 +170,7 @@ export type { RecordingOptionsForScreenCaptureKit };
  * Main class for screen recording with ScreenCaptureKit.
  * Allows capturing the screen using Apple's native APIs.
  */
-class ScreenCaptureKit {
+export class ScreenCaptureKit {
   /** Path to the output video file. */
   videoPath: string | null = null;
   /** The ongoing recording process. */
@@ -210,7 +210,7 @@ class ScreenCaptureKit {
    * @param {boolean} [options.showCursor=true] - Show the cursor.
    * @param {boolean} [options.highlightClicks=false] - Highlight mouse clicks.
    * @param {number} [options.screenId=0] - Screen ID to capture.
-   * @param {number} [options.audioDeviceId] - System audio device ID.
+   * @param {string} [options.audioDeviceId] - System audio device ID.
    * @param {string} [options.microphoneDeviceId] - Microphone device ID.
    * @param {string} [options.videoCodec="h264"] - Video codec to use.
    * @param {boolean} [options.enableHDR=false] - Enable HDR recording.
@@ -252,8 +252,6 @@ class ScreenCaptureKit {
         reject(new Error("Call `.stopRecording()` first"));
         return;
       }
-
-      console.log('hey');
 
       this.videoPath = createTempFile({ extension: "mp4" });
       
@@ -491,44 +489,54 @@ function getCodecs() {
 }
 
 /**
- * Retrieves the list of screens available for recording.
- * @returns {Promise<Array>} A promise that resolves with an array of objects representing the screens.
- * Each object contains the properties id, width, and height.
+ * Specific error for ScreenCaptureKit operations
  */
-export const screens = async (): Promise<Screen[] | string> => {
+export class ScreenCaptureKitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ScreenCaptureKitError';
+  }
+}
+
+/**
+ * Retrieves the list of screens available for recording.
+ * @returns {Promise<Screen[]>} A promise that resolves with an array of objects representing the screens.
+ * @throws {ScreenCaptureKitError} If screen retrieval fails.
+ */
+export const screens = async (): Promise<Screen[]> => {
   const { stderr } = await execa(BIN, ["list", "screens"]);
   try {
     return JSON.parse(stderr);
   } catch {
-    return stderr;
+    throw new ScreenCaptureKitError(`Failed to retrieve screens: ${stderr}`);
   }
 };
 
 /**
  * Retrieves the list of system audio devices available for recording.
- * @returns {Promise<Array>} A promise that resolves with an array of objects representing the audio devices.
- * Each object contains the properties id, name, and manufacturer.
+ * @returns {Promise<AudioDevice[]>} A promise that resolves with an array of objects representing the audio devices.
+ * @throws {ScreenCaptureKitError} If audio device retrieval fails.
  */
-export const audioDevices = async (): Promise<AudioDevice[] | string> => {
+export const audioDevices = async (): Promise<AudioDevice[]> => {
   const { stderr } = await execa(BIN, ["list", "audio-devices"]);
   try {
     return JSON.parse(stderr);
   } catch {
-    return stderr;
+    throw new ScreenCaptureKitError(`Failed to retrieve audio devices: ${stderr}`);
   }
 };
 
 /**
  * Retrieves the list of microphone devices available for recording.
- * @returns {Promise<Array>} A promise that resolves with an array of objects representing the microphones.
- * Each object contains the properties id, name, and manufacturer.
+ * @returns {Promise<MicrophoneDevice[]>} A promise that resolves with an array of objects representing the microphones.
+ * @throws {ScreenCaptureKitError} If microphone retrieval fails.
  */
-export const microphoneDevices = async (): Promise<MicrophoneDevice[] | string> => {
+export const microphoneDevices = async (): Promise<MicrophoneDevice[]> => {
   const { stderr } = await execa(BIN, ["list", "microphone-devices"]);
   try {
     return JSON.parse(stderr);
   } catch {
-    return stderr;
+    throw new ScreenCaptureKitError(`Failed to retrieve microphones: ${stderr}`);
   }
 };
 
